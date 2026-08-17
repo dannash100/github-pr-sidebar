@@ -4,21 +4,19 @@
 
 ### Added
 
-- **For later.** A shelf for PRs you don't want in the way. Pick a PR up and the whole header turns into a Save for later target, so a flick to the top edge parks it; the ⋯ on a row does the same. The archive button counts what's parked and switches the list to the shelf, and dropping on the header again brings a PR back. Whatever is stacked on a PR goes with it, and a PR keeps its category for when it returns.
+- **For later.** A shelf for PRs you don't want in the way. Pick a PR up and the header becomes a Save for later target; the ⋯ on a row does the same. The archive button counts what's parked and switches the list to the shelf. A stack moves as one, and a parked PR keeps its category.
 
 ### Changed
 
-- Settings and the per-PR ⋯ editor share one set of control styles, and the editor is now an inset card. Buttons are compact and right-aligned, with Clear token and Delete pinned left.
-- The bar marking the PR you're viewing takes its category's colour instead of always being blue.
-- Dragging a PR out of a category aims at a labelled area filling the rest of the panel, rather than the sliver of space below the last category.
-
-- Titles line up whether or not a PR has a stack to expand: the ▾ moved into its own gutter beside the accent bar.
+- Settings and the per-PR ⋯ editor now share one set of controls.
+- The bar on the PR you're viewing takes its category's colour.
+- Dropping a PR out of a category aims at the whole area below the list, not the sliver under the last one.
 
 ### Fixed
 
-- CI and conflict state only refreshed when the PR itself changed, so a rerun that went green, or a conflict from the base moving, could sit wrong for hours. CI re-checks on a 45 second age, the rest of the detail every 5 minutes.
+- CI and conflicts only refreshed when the PR itself changed, so a rerun that went green could read ✗ for hours. CI re-checks every 45 seconds, the rest every 5 minutes.
 - A drag released outside the sidebar left its card stuck on screen.
-- Grabbing a row by an avatar or a link started the browser's own drag on top of ours.
+- Grabbing a row by an avatar started the browser's own drag on top of ours.
 
 ## 1.2 — 2026-08-17
 
