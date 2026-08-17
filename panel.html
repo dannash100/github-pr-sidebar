@@ -17,6 +17,7 @@
       --amber: #9a6700;
       --purple: #8250df;
       --pop: #ffffff;
+      --sheen: rgba(255, 255, 255, 0.65);
       --shadow: 0 6px 24px rgba(31, 35, 40, 0.16), 0 1px 3px rgba(31, 35, 40, 0.1);
     }
     @media (prefers-color-scheme: dark) {
@@ -33,6 +34,7 @@
         --amber: #d29922;
         --purple: #a371f7;
         --pop: #161b22;
+        --sheen: rgba(255, 255, 255, 0.05);
         --shadow: 0 8px 28px rgba(1, 4, 9, 0.7), 0 0 0 1px rgba(240, 246, 252, 0.08);
       }
     }
@@ -223,6 +225,35 @@
       cursor: pointer;
     }
     #shelfback:hover { background: var(--hover); border-color: var(--accent); color: var(--accent); }
+
+    li.sk { padding: 9px 22px 10px; }
+    .sk-bar {
+      position: relative;
+      height: 9px;
+      border-radius: 5px;
+      background: var(--hover);
+      overflow: hidden;
+    }
+    .sk-title { width: 76%; }
+    .sk-meta { width: 44%; height: 7px; margin-top: 8px; }
+    li.sk:nth-child(2) .sk-title { width: 61%; }
+    li.sk:nth-child(3) .sk-title { width: 84%; }
+    li.sk:nth-child(3) .sk-meta { width: 52%; }
+    li.sk:nth-child(4) .sk-title { width: 55%; }
+    .sk-bar::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(90deg, transparent, var(--sheen), transparent);
+      transform: translateX(-100%);
+      animation: sweep 1.2s ease-in-out infinite;
+    }
+    li.sk:nth-child(2) .sk-bar::after { animation-delay: 0.08s; }
+    li.sk:nth-child(3) .sk-bar::after { animation-delay: 0.16s; }
+    li.sk:nth-child(4) .sk-bar::after { animation-delay: 0.24s; }
+    @keyframes sweep { to { transform: translateX(100%); } }
+    #refresh.spin svg { animation: spin 0.9s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
 
     li.pr { position: relative; border-radius: 9px; margin-bottom: 3px; }
     li.pr > a {

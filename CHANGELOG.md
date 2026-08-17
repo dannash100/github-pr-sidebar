@@ -11,6 +11,9 @@
 - Settings and the per-PR ⋯ editor now share one set of controls.
 - The bar on the PR you're viewing takes its category's colour.
 - Dropping a PR out of a category aims at the whole area below the list, not the sliver under the last one.
+- Opening the sidebar paints the last list from storage straight away; a first-ever run shows skeleton rows, then your own PRs as soon as the search answers.
+- Check suites are the slowest thing GitHub answers with, so CI settles behind the list rather than holding it up, and re-reads on a 60 second age.
+- Settings opens on the click, with the org list filling in behind it.
 
 ### Fixed
 

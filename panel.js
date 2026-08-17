@@ -12,8 +12,10 @@ const looseDrop = $('loosedrop');
 let viewLater = false; // showing the For later shelf instead of the live list
 let activeTabUrl = null; // URL of the currently focused browser tab
 let cachedLogin = null; // GitHub login, fetched once; cleared when the token changes
-const detailCache = new Map(); // html_url -> { baseRef, headRef, conflicts, additions, deletions, ci, updated_at, detailAt }
+const detailCache = new Map(); // html_url -> { baseRef, headRef, conflicts, additions, deletions, updated_at, detailAt }
+const ciCache = new Map(); // html_url -> { ci, at, updated_at }
 const DETAIL_TTL = 300000;
+const CI_TTL = 60000;
 let prMeta = {}; // html_url -> { group, blockedBy, note, later }, user-set via the row editor
 let categories = []; // [{ id, name, emoji, color, epic, collapsed }], render order
 let collapsedNodes = new Set(); // html_urls whose stacked children are folded away
@@ -111,7 +113,10 @@ const CI_BAD = new Set(['FAILURE', 'TIMED_OUT', 'CANCELLED', 'ACTION_REQUIRED', 
 function rollupCi(commit) {
   const newest = new Map();
   for (const suite of commit?.checkSuites?.nodes ?? []) {
-    if (!suite?.all?.totalCount) continue; // apps that register a suite and never report
+    if (!suite) continue;
+    // Apps that register a suite on the PR and never post a run sit at QUEUED
+    // for the life of the branch, which would read as CI still going.
+    if (!suite.workflowRun && suite.status === 'QUEUED') continue;
     const workflow = suite.workflowRun?.workflow?.id ?? `app:${suite.app?.id}`;
     const key = `${workflow}|${suite.workflowRun?.event ?? ''}`;
     const prev = newest.get(key);
@@ -127,38 +132,53 @@ function rollupCi(commit) {
   return { state, failed: bad.flatMap((s) => s.bad?.nodes?.map((n) => n.name) ?? []) };
 }
 
-const EXTRAS_QUERY = `query($ids:[ID!]!){nodes(ids:$ids){... on PullRequest{
-id reviewDecision mergeQueueEntry{state position}
-commits(last:1){nodes{commit{checkSuites(first:40){nodes{
+async function graphql(token, query, ids) {
+  const chunks = [];
+  for (let i = 0; i < ids.length; i += 20) chunks.push(ids.slice(i, i + 20));
+  const nodes = [];
+  await Promise.all(
+    chunks.map(async (chunk) => {
+      try {
+        const res = await fetch('https://api.github.com/graphql', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ query, variables: { ids: chunk } }),
+        });
+        if (!res.ok) return;
+        nodes.push(...((await res.json())?.data?.nodes ?? []));
+      } catch {
+        // chunk missing → those PRs keep their last known state this poll
+      }
+    }),
+  );
+  return nodes;
+}
+
+// Review decision and merge-queue position: neither is in the REST search
+// results, and both come back in a fraction of the time the check suites take.
+const EXTRAS_QUERY =
+  'query($ids:[ID!]!){nodes(ids:$ids){... on PullRequest{id reviewDecision mergeQueueEntry{state position}}}}';
+
+async function fetchPrExtras(token, items) {
+  const map = new Map();
+  for (const node of await graphql(token, EXTRAS_QUERY, items.map((i) => i.node_id).filter(Boolean))) {
+    if (node?.id) map.set(node.id, { queue: node.mergeQueueEntry ?? null, review: node.reviewDecision ?? null });
+  }
+  return map;
+}
+
+// Walking the check suites is by far the slowest thing this panel asks for, so
+// it runs behind the render and only for PRs whose state could have moved.
+const CI_QUERY = `query($ids:[ID!]!){nodes(ids:$ids){... on PullRequest{
+id commits(last:1){nodes{commit{checkSuites(last:30){nodes{
 status conclusion createdAt app{id} workflowRun{event workflow{id}}
-all:checkRuns(first:1){totalCount}
-bad:checkRuns(first:5,filterBy:{conclusions:[FAILURE,TIMED_OUT,CANCELLED,ACTION_REQUIRED,STARTUP_FAILURE]}){nodes{name}}
+bad:checkRuns(first:3,filterBy:{conclusions:[FAILURE,TIMED_OUT,CANCELLED,ACTION_REQUIRED,STARTUP_FAILURE]}){nodes{name}}
 }}}}}}}}`;
 
-// CI state, merge-queue position and review decision in one request for every
-// PR on screen. Returns Map<node_id, { queue, review, ci }>.
-async function fetchPrExtras(token, items) {
-  const ids = items.map((i) => i.node_id).filter(Boolean);
+async function fetchCiMap(token, items) {
   const map = new Map();
-  for (let i = 0; i < ids.length; i += 20) {
-    try {
-      const res = await fetch('https://api.github.com/graphql', {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query: EXTRAS_QUERY, variables: { ids: ids.slice(i, i + 20) } }),
-      });
-      if (!res.ok) continue;
-      for (const node of (await res.json())?.data?.nodes ?? []) {
-        if (!node?.id) continue;
-        map.set(node.id, {
-          queue: node.mergeQueueEntry ?? null,
-          review: node.reviewDecision ?? null,
-          ci: rollupCi(node.commits?.nodes?.[0]?.commit),
-        });
-      }
-    } catch {
-      // chunk missing → those PRs keep their last known state this poll
-    }
+  for (const node of await graphql(token, CI_QUERY, items.map((i) => i.node_id).filter(Boolean))) {
+    if (node?.id) map.set(node.id, rollupCi(node.commits?.nodes?.[0]?.commit));
   }
   return map;
 }
@@ -179,36 +199,39 @@ async function fetchCoded(token, items, login) {
   const query =
     'query($ids:[ID!]!){nodes(ids:$ids){... on PullRequest{url commits(last:60){nodes{commit{' +
     'author{user{login}} authors(first:5){nodes{user{login}}}}}}}}}';
-  for (let i = 0; i < pending.length; i += 10) {
-    const chunk = pending.slice(i, i + 10);
-    let byUrl = null;
-    try {
-      const res = await fetch('https://api.github.com/graphql', {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query, variables: { ids: chunk.map((c) => c.node_id) } }),
-      });
-      if (res.ok) {
-        byUrl = new Map();
-        for (const node of (await res.json())?.data?.nodes ?? []) {
-          if (!node?.url) continue;
-          const logins = new Set();
-          for (const c of node.commits?.nodes ?? []) {
-            if (c.commit?.author?.user?.login) logins.add(c.commit.author.user.login);
-            for (const co of c.commit?.authors?.nodes ?? []) if (co?.user?.login) logins.add(co.user.login);
+  const chunks = [];
+  for (let i = 0; i < pending.length; i += 10) chunks.push(pending.slice(i, i + 10));
+  await Promise.all(
+    chunks.map(async (chunk) => {
+      let byUrl = null;
+      try {
+        const res = await fetch('https://api.github.com/graphql', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ query, variables: { ids: chunk.map((c) => c.node_id) } }),
+        });
+        if (res.ok) {
+          byUrl = new Map();
+          for (const node of (await res.json())?.data?.nodes ?? []) {
+            if (!node?.url) continue;
+            const logins = new Set();
+            for (const c of node.commits?.nodes ?? []) {
+              if (c.commit?.author?.user?.login) logins.add(c.commit.author.user.login);
+              for (const co of c.commit?.authors?.nodes ?? []) if (co?.user?.login) logins.add(co.user.login);
+            }
+            byUrl.set(node.url, logins.has(login));
           }
-          byUrl.set(node.url, logins.has(login));
         }
+      } catch {
+        byUrl = null; // keep the PR rather than hiding it on a network blip
       }
-    } catch {
-      byUrl = null; // keep the PR rather than hiding it on a network blip
-    }
-    for (const item of chunk) {
-      const coded = byUrl?.has(item.html_url) ? byUrl.get(item.html_url) : true;
-      out.set(item.html_url, coded);
-      if (byUrl) codedCache.set(item.html_url, { updated_at: item.updated_at, coded });
-    }
-  }
+      for (const item of chunk) {
+        const coded = byUrl?.has(item.html_url) ? byUrl.get(item.html_url) : true;
+        out.set(item.html_url, coded);
+        if (byUrl) codedCache.set(item.html_url, { updated_at: item.updated_at, coded });
+      }
+    }),
+  );
   return out;
 }
 
@@ -895,6 +918,38 @@ function renderList(model) {
 
 const rerender = () => renderList(buildModel(lastPrs));
 
+// Firefox rebuilds the panel every time the sidebar opens, so the last list is
+// kept in storage and painted before the first request goes out. children and
+// hotfixes are rebuilt on every render, and holding them here would serialise
+// the same PR objects several times over.
+const SNAPSHOT_FIELDS = [
+  'number', 'repo', 'html_url', 'title', 'draft', 'updated_at', 'comments',
+  'baseRef', 'headRef', 'conflicts', 'additions', 'deletions', 'ci', 'queue',
+  'review', 'blockedBy', 'tracked', 'author', 'avatar', 'collab', 'group', 'note', 'later',
+];
+let savedSnapshot = '';
+
+function showSkeleton() {
+  list.textContent = '';
+  for (let i = 0; i < 4; i++) {
+    const li = document.createElement('li');
+    li.className = 'sk';
+    const title = document.createElement('div');
+    title.className = 'sk-bar sk-title';
+    const meta = document.createElement('div');
+    meta.className = 'sk-bar sk-meta';
+    li.append(title, meta);
+    list.appendChild(li);
+  }
+}
+
+function saveSnapshot(prs) {
+  const json = JSON.stringify(prs.map((pr) => Object.fromEntries(SNAPSHOT_FIELDS.map((k) => [k, pr[k]]))));
+  if (json === savedSnapshot) return;
+  savedSnapshot = json;
+  api.storage.local.set({ snapshot: json });
+}
+
 function syncHeader(model) {
   const parked = lastPrs.filter((p) => p.later).length;
   document.body.classList.toggle('later', viewLater);
@@ -924,15 +979,14 @@ function setLater(urls, on) {
 // The detail fetch is the only per-PR request; it holds branch refs, diff size
 // and the conflict flag, and the base branch moving conflicts a PR without
 // touching updated_at, so it expires on age as well. Parked PRs sit still.
-async function hydrate(token, item, extras, login) {
-  const repo = item.repository_url.split('/repos/')[1] ?? '';
-  const extra = extras.get(item.node_id) ?? {};
-  const author = item.user?.login ?? null;
+// Everything a row needs that the search result already carries, so the list can
+// paint before the per-PR detail and CI have landed.
+function shellPr(item, login) {
   const meta = prMeta[item.html_url] ?? {};
-  const parked = meta.later === true;
-  const pr = {
+  const author = item.user?.login ?? null;
+  return {
     number: item.number,
-    repo,
+    repo: item.repository_url.split('/repos/')[1] ?? '',
     html_url: item.html_url,
     title: item.title,
     draft: item.draft,
@@ -943,8 +997,10 @@ async function hydrate(token, item, extras, login) {
     conflicts: false,
     additions: null,
     deletions: null,
-    queue: extra.queue ?? null,
-    review: extra.review ?? null,
+    ci: null,
+    queue: null,
+    review: null,
+    blockedBy: null,
     tracked: item.tracked ?? false,
     author,
     avatar: item.user?.avatar_url
@@ -953,8 +1009,15 @@ async function hydrate(token, item, extras, login) {
     collab: Boolean(author) && author !== login,
     group: meta.group ?? null,
     note: meta.note ?? null,
-    later: parked,
+    later: meta.later === true,
   };
+}
+
+async function hydrate(token, item, extras, login) {
+  const meta = prMeta[item.html_url] ?? {};
+  const parked = meta.later === true;
+  const pr = shellPr(item, login);
+  const repo = pr.repo;
 
   const now = Date.now();
   const cached = detailCache.get(item.html_url);
@@ -975,11 +1038,15 @@ async function hydrate(token, item, extras, login) {
       // leave defaults → treated as a root with no conflict info
     }
   }
-  // A cached CI state only stands in when the GraphQL call didn't cover this PR.
-  pr.ci = extra.ci ?? cached?.ci ?? null;
-  const { baseRef, headRef, conflicts, additions, deletions, ci, updated_at } = pr;
+  // Awaited here rather than up front so the detail request above runs while the
+  // review and queue call is still in flight.
+  const extra = (await extras).get(item.node_id) ?? {};
+  pr.queue = extra.queue ?? null;
+  pr.review = extra.review ?? null;
+  pr.ci = ciCache.get(item.html_url)?.ci ?? null; // settleCi fills this in behind the render
+  const { baseRef, headRef, conflicts, additions, deletions, updated_at } = pr;
   detailCache.set(item.html_url, {
-    baseRef, headRef, conflicts, additions, deletions, ci, updated_at,
+    baseRef, headRef, conflicts, additions, deletions, updated_at,
     detailAt: usable ? cached.detailAt : now,
   });
 
@@ -989,15 +1056,54 @@ async function hydrate(token, item, extras, login) {
   return pr;
 }
 
-async function load() {
+// CI settles after the list is on screen. A PR is due when nothing is known
+// about it, when it has changed, or when its last answer has aged out; a rerun
+// on the same commit moves nothing else, which is what the age covers.
+async function settleCi(token, items, prs, manual) {
+  const now = Date.now();
+  const due = items.filter((item) => {
+    if (manual) return true;
+    const c = ciCache.get(item.html_url);
+    return !c || c.updated_at !== item.updated_at || now - c.at > CI_TTL;
+  });
+  if (!due.length) return;
+  const map = await fetchCiMap(token, due);
+  let changed = false;
+  for (const item of due) {
+    if (!map.has(item.node_id)) continue;
+    const ci = map.get(item.node_id);
+    ciCache.set(item.html_url, { ci, at: Date.now(), updated_at: item.updated_at });
+    const pr = prs.find((p) => p.html_url === item.html_url);
+    if (pr && JSON.stringify(pr.ci) !== JSON.stringify(ci)) {
+      pr.ci = ci;
+      changed = true;
+    }
+  }
+  if (changed && lastPrs === prs) {
+    rerender();
+    saveSnapshot(prs);
+  }
+}
+
+// Polls and a click can overlap, and the CI pass keeps a load alive after the
+// list is drawn, so every load carries a number and an older one stops short
+// rather than painting over a newer one.
+let loadSeq = 0;
+let loading = false;
+
+async function load(manual) {
   if (editorOpen) return;
+  const seq = ++loadSeq;
+  loading = true;
   const token = await getToken();
   if (!token) {
     setup.style.display = 'block';
     statusEl.textContent = 'Add a token to get started.';
     return;
   }
-  if (!list.children.length) statusEl.textContent = 'Loading…';
+  const cold = !lastPrs.length;
+  if (cold && !list.children.length && emptyEl.style.display === 'none') showSkeleton();
+  if (manual || cold) $('refresh').classList.add('spin');
 
   try {
     // Whoami once, then cache it: the login only feeds the search query below, so
@@ -1011,18 +1117,18 @@ async function load() {
       cachedLogin = (await userRes.json()).login;
     }
     const login = cachedLogin;
-    const scope = await getScope();
-    const mode = await getInvolvement();
+    const [scope, mode] = await Promise.all([getScope(), getInvolvement(), loadState()]);
     HOTFIX_RE = await getHotfixRe();
-    await loadState();
 
     const who = mode === 'mine' ? `author:${login}` : `involves:${login}`;
-    const found = await searchPrs(token, `is:open is:pr archived:false ${scope} ${who}`);
+    const [found, tracked] = await Promise.all([
+      searchPrs(token, `is:open is:pr archived:false ${scope} ${who}`),
+      fetchTracked(token),
+    ]);
     if (!found.ok) {
       statusEl.textContent = statusMsg(found.status);
       return;
     }
-    const tracked = await fetchTracked(token);
     const seen = new Set();
     let items = [...found.items, ...tracked].filter((i) => {
       if (seen.has(i.html_url)) return false;
@@ -1030,25 +1136,47 @@ async function load() {
       return true;
     });
     const mine = (i) => (i.user?.login ?? null) === login || i.tracked;
+    // Your own PRs can't be filtered out by the commit check below, so on a cold
+    // start they go up now rather than after two more round trips.
+    if (cold && seq === loadSeq) {
+      const own = items.filter(mine).map((item) => shellPr(item, login));
+      if (own.length) {
+        lastPrs = own;
+        rerender();
+      }
+    }
+    // Two independent GraphQL calls: the commit check that thins the list, and
+    // the CI/review/queue read. Starting both here costs one extra id in the
+    // second when a PR turns out to be someone else's, and saves a round trip.
     const others = items.filter((i) => !mine(i));
+    const extras = fetchPrExtras(token, items);
     if (others.length) {
       const coded = await fetchCoded(token, others, login);
       items = items.filter((i) => mine(i) || coded.get(i.html_url) !== false);
     }
     if (!items.length) {
       lastPrs = [];
-      statusEl.textContent = 'No open PRs.';
       rerender();
+      saveSnapshot([]);
       return;
     }
 
-    const extras = await fetchPrExtras(token, items);
     const prs = await Promise.all(items.map((item) => hydrate(token, item, extras, login)));
+    if (seq !== loadSeq) return;
 
     lastPrs = prs;
     renderList(buildModel(prs));
+    saveSnapshot(prs);
+    $('refresh').classList.remove('spin');
+    await settleCi(token, items, prs, manual);
   } catch (e) {
     statusEl.textContent = `Network error: ${e.message}`;
+  } finally {
+    if (seq === loadSeq) {
+      loading = false;
+      $('refresh').classList.remove('spin');
+      if (!lastPrs.length && list.querySelector('li.sk')) list.textContent = '';
+    }
   }
 }
 
@@ -1777,7 +1905,7 @@ api.tabs.onUpdated.addListener(refreshActiveTab);
 
 $('refresh').addEventListener('click', () => {
   closeEditor();
-  load();
+  load(true);
 });
 
 function setView(later) {
@@ -1873,26 +2001,41 @@ $('trackurl').addEventListener('keydown', (e) => {
 });
 
 const SCOPE_CUSTOM = ' custom';
-async function populateScopeSelect() {
+let cachedOrgs = null;
+
+function fillScopeOptions(orgs, current) {
   const sel = $('scope');
-  const custom = $('scopecustom');
-  const current = await getScope();
   sel.textContent = '';
   sel.appendChild(new Option('everywhere', ''));
-  const token = await getToken();
-  if (token) {
-    try {
-      const res = await fetch('https://api.github.com/user/orgs?per_page=100', { headers: authHeaders(token) });
-      if (res.ok) for (const o of await res.json()) sel.appendChild(new Option(`org:${o.login}`, `org:${o.login}`));
-    } catch {
-      /* offline or token lacks read:org, the custom option still covers it */
-    }
-  }
+  const logins = new Set(orgs);
+  if (current.startsWith('org:')) logins.add(current.slice(4));
+  for (const login of logins) sel.appendChild(new Option(`org:${login}`, `org:${login}`));
   sel.appendChild(new Option('one repo…', SCOPE_CUSTOM));
   const preset = [...sel.options].some((o) => o.value === current);
   sel.value = preset ? current : SCOPE_CUSTOM;
+  return preset;
+}
+
+async function populateScopeSelect() {
+  const custom = $('scopecustom');
+  const current = await getScope();
+  const preset = fillScopeOptions(cachedOrgs ?? [], current);
   custom.value = preset ? '' : current;
   custom.style.display = preset ? 'none' : '';
+  if (cachedOrgs) return;
+  const token = await getToken();
+  if (!token) return;
+  try {
+    const res = await fetch('https://api.github.com/user/orgs?per_page=100', { headers: authHeaders(token) });
+    if (!res.ok) return;
+    cachedOrgs = (await res.json()).map((o) => o.login);
+    // Re-read the select rather than `current`: the list may have been changed
+    // by hand while the orgs were in flight.
+    const sel = $('scope');
+    fillScopeOptions(cachedOrgs, sel.value === SCOPE_CUSTOM ? custom.value.trim() : sel.value);
+  } catch {
+    /* offline or token lacks read:org, the custom option still covers it */
+  }
 }
 $('scope').addEventListener('change', () => {
   const isCustom = $('scope').value === SCOPE_CUSTOM;
@@ -1916,17 +2059,19 @@ setup.addEventListener('click', (e) => {
   if (href) openUrl(href);
 });
 
+// The panel opens on the click; the org list is a network call and fills in
+// behind it rather than holding the whole thing back.
 $('settings').addEventListener('click', async () => {
   toggleTrackbox(false);
   const show = setup.style.display !== 'block';
-  if (show) {
-    await populateScopeSelect();
-    $('hotfixre').value = (await api.storage.local.get('hotfixPattern')).hotfixPattern ?? '';
-    involvement = await getInvolvement();
-    syncSeg();
-  }
   setup.style.display = show ? 'block' : 'none';
   $('settings').classList.toggle('on', show);
+  if (!show) return;
+  const { hotfixPattern, involvement: saved } = await api.storage.local.get(['hotfixPattern', 'involvement']);
+  $('hotfixre').value = hotfixPattern ?? '';
+  involvement = saved === 'mine' ? 'mine' : 'involved';
+  syncSeg();
+  populateScopeSelect();
 });
 $('save').addEventListener('click', async () => {
   closeEditor();
@@ -1958,13 +2103,34 @@ $('clear').addEventListener('click', async () => {
 // Poll while the sidebar is visible; refresh on regaining focus.
 // GitHub has no push for "my PRs", so a 10s poll is the swap trigger.
 setInterval(() => {
-  if (!document.hidden && !dnd) load();
+  if (!document.hidden && !dnd && !loading) load();
 }, 10000);
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) cancelDnd();
   else load();
 });
 
-syncSeg();
-refreshActiveTab();
-load();
+async function boot() {
+  syncSeg();
+  const { token, snapshot } = await api.storage.local.get(['token', 'snapshot']);
+  if (token && snapshot) {
+    try {
+      await loadState();
+      HOTFIX_RE = await getHotfixRe();
+      lastPrs = JSON.parse(snapshot);
+      savedSnapshot = snapshot;
+      // Seed as already stale: the badge shows straight away and still gets
+      // re-read on the first poll.
+      for (const pr of lastPrs) {
+        if (pr.ci) ciCache.set(pr.html_url, { ci: pr.ci, at: 0, updated_at: pr.updated_at });
+      }
+      rerender();
+    } catch {
+      lastPrs = []; // unreadable snapshot, the load below fills the list instead
+    }
+  }
+  refreshActiveTab();
+  load();
+}
+
+boot();
