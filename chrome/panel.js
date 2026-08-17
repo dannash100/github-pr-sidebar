@@ -12,10 +12,9 @@ const looseDrop = $('loosedrop');
 let viewLater = false; // showing the For later shelf instead of the live list
 let activeTabUrl = null; // URL of the currently focused browser tab
 let cachedLogin = null; // GitHub login, fetched once; cleared when the token changes
-const detailCache = new Map(); // html_url -> { baseRef, headRef, conflicts, additions, deletions, ci, updated_at, headSha, detailAt, ciAt }
-const CI_TTL = 45000;
+const detailCache = new Map(); // html_url -> { baseRef, headRef, conflicts, additions, deletions, ci, updated_at, detailAt }
 const DETAIL_TTL = 300000;
-let prMeta = {}; // html_url -> { group, blockedBy, note }, user-set via the row editor
+let prMeta = {}; // html_url -> { group, blockedBy, note, later }, user-set via the row editor
 let categories = []; // [{ id, name, emoji, color, epic, collapsed }], render order
 let collapsedNodes = new Set(); // html_urls whose stacked children are folded away
 let filterText = '';
@@ -73,11 +72,11 @@ async function loadState() {
   await api.storage.local.set({ categories, prMeta });
 }
 
-// 401/403 mean the token; 5xx/429/etc. are GitHub having a moment — say so
+// 401/403 mean the token; 5xx/429/etc. are GitHub having a moment, say so
 // instead of telling the user to re-paste a token that's actually fine.
 function statusMsg(code) {
   if (code === 401 || code === 403) return `Token rejected (${code}). Re-paste a valid token via ⚙.`;
-  return `GitHub unavailable (${code}) — retrying…`;
+  return `GitHub unavailable (${code}), retrying…`;
 }
 
 function authHeaders(token) {
@@ -104,62 +103,64 @@ function relativeTime(iso) {
   return 'just now';
 }
 
-// Aggregate check-runs for a commit. Returns { state: pass|fail|pending, failed: string[] } or null.
-async function fetchCi(token, repo, sha) {
-  if (!sha) return null;
-  try {
-    const res = await fetch(
-      `https://api.github.com/repos/${repo}/commits/${sha}/check-runs?per_page=100`,
-      { headers: authHeaders(token) },
-    );
-    if (!res.ok) return null;
-    const allRuns = (await res.json()).check_runs ?? [];
-    if (!allRuns.length) return null;
-    // GitHub keeps stale runs (reruns, concurrency-cancelled) for the same SHA but
-    // its UI shows only the latest per name. Dedupe the same way or green PRs read as failing.
-    const latest = new Map();
-    for (const r of allRuns) {
-      const prev = latest.get(r.name);
-      if (!prev || (r.started_at ?? '') >= (prev.started_at ?? '')) latest.set(r.name, r);
-    }
-    const runs = [...latest.values()];
-    const bad = ['failure', 'timed_out', 'cancelled', 'action_required'];
-    const failed = runs.filter((r) => bad.includes(r.conclusion)).map((r) => r.name);
-    let state;
-    if (runs.some((r) => r.status !== 'completed')) state = 'pending';
-    else if (failed.length) state = 'fail';
-    else state = 'pass';
-    return { state, failed };
-  } catch {
-    return null;
+const CI_BAD = new Set(['FAILURE', 'TIMED_OUT', 'CANCELLED', 'ACTION_REQUIRED', 'STARTUP_FAILURE']);
+
+// A rerun adds a whole new check suite, and GitHub's own PR page counts only
+// the newest suite per workflow and trigger. Counting them all keeps a
+// superseded failure on screen for as long as the branch head lives.
+function rollupCi(commit) {
+  const newest = new Map();
+  for (const suite of commit?.checkSuites?.nodes ?? []) {
+    if (!suite?.all?.totalCount) continue; // apps that register a suite and never report
+    const workflow = suite.workflowRun?.workflow?.id ?? `app:${suite.app?.id}`;
+    const key = `${workflow}|${suite.workflowRun?.event ?? ''}`;
+    const prev = newest.get(key);
+    if (!prev || (suite.createdAt ?? '') >= (prev.createdAt ?? '')) newest.set(key, suite);
   }
+  if (!newest.size) return null;
+  const suites = [...newest.values()];
+  const bad = suites.filter((s) => CI_BAD.has(s.conclusion));
+  let state;
+  if (suites.some((s) => s.status !== 'COMPLETED')) state = 'pending';
+  else if (bad.length) state = 'fail';
+  else state = 'pass';
+  return { state, failed: bad.flatMap((s) => s.bad?.nodes?.map((n) => n.name) ?? []) };
 }
 
-// Merge-queue status and review decision aren't in REST search results, so ask
-// GraphQL for all PRs at once (one request). Returns Map<node_id, { queue, review }>.
+const EXTRAS_QUERY = `query($ids:[ID!]!){nodes(ids:$ids){... on PullRequest{
+id reviewDecision mergeQueueEntry{state position}
+commits(last:1){nodes{commit{checkSuites(first:40){nodes{
+status conclusion createdAt app{id} workflowRun{event workflow{id}}
+all:checkRuns(first:1){totalCount}
+bad:checkRuns(first:5,filterBy:{conclusions:[FAILURE,TIMED_OUT,CANCELLED,ACTION_REQUIRED,STARTUP_FAILURE]}){nodes{name}}
+}}}}}}}}`;
+
+// CI state, merge-queue position and review decision in one request for every
+// PR on screen. Returns Map<node_id, { queue, review, ci }>.
 async function fetchPrExtras(token, items) {
   const ids = items.map((i) => i.node_id).filter(Boolean);
-  if (!ids.length) return new Map();
-  const query =
-    'query($ids:[ID!]!){nodes(ids:$ids){... on PullRequest{id reviewDecision mergeQueueEntry{state position}}}}';
-  try {
-    const res = await fetch('https://api.github.com/graphql', {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ query, variables: { ids } }),
-    });
-    if (!res.ok) return new Map();
-    const data = await res.json();
-    const map = new Map();
-    for (const node of data?.data?.nodes ?? []) {
-      if (node?.id) {
-        map.set(node.id, { queue: node.mergeQueueEntry ?? null, review: node.reviewDecision ?? null });
+  const map = new Map();
+  for (let i = 0; i < ids.length; i += 20) {
+    try {
+      const res = await fetch('https://api.github.com/graphql', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query: EXTRAS_QUERY, variables: { ids: ids.slice(i, i + 20) } }),
+      });
+      if (!res.ok) continue;
+      for (const node of (await res.json())?.data?.nodes ?? []) {
+        if (!node?.id) continue;
+        map.set(node.id, {
+          queue: node.mergeQueueEntry ?? null,
+          review: node.reviewDecision ?? null,
+          ci: rollupCi(node.commits?.nodes?.[0]?.commit),
+        });
       }
+    } catch {
+      // chunk missing → those PRs keep their last known state this poll
     }
-    return map;
-  } catch {
-    return new Map();
   }
+  return map;
 }
 
 const codedCache = new Map(); // html_url -> { updated_at, coded }
@@ -289,11 +290,9 @@ async function fetchTracked(token) {
             conflicts: d.mergeable_state === 'dirty',
             additions: d.additions ?? null,
             deletions: d.deletions ?? null,
-            ci: null,
+            ci: detailCache.get(d.html_url)?.ci ?? null,
             updated_at: d.updated_at,
-            headSha: d.head?.sha ?? null,
             detailAt: Date.now(),
-            ciAt: 0,
           });
         }
         return {
@@ -863,7 +862,7 @@ function renderList(model) {
     }
     emptyEl.append(b, p);
   }
-  syncChrome(model);
+  syncHeader(model);
 
   for (const li of list.children) {
     const oldTop = before.get(li.dataset.url);
@@ -896,7 +895,7 @@ function renderList(model) {
 
 const rerender = () => renderList(buildModel(lastPrs));
 
-function syncChrome(model) {
+function syncHeader(model) {
   const parked = lastPrs.filter((p) => p.later).length;
   document.body.classList.toggle('later', viewLater);
   laterBtn.classList.toggle('has', parked > 0);
@@ -919,6 +918,75 @@ function setLater(urls, on) {
     if (pr) pr.later = on;
   }
   saveMeta();
+}
+
+// One search result plus its GraphQL extras into the shape the list renders.
+// The detail fetch is the only per-PR request; it holds branch refs, diff size
+// and the conflict flag, and the base branch moving conflicts a PR without
+// touching updated_at, so it expires on age as well. Parked PRs sit still.
+async function hydrate(token, item, extras, login) {
+  const repo = item.repository_url.split('/repos/')[1] ?? '';
+  const extra = extras.get(item.node_id) ?? {};
+  const author = item.user?.login ?? null;
+  const meta = prMeta[item.html_url] ?? {};
+  const parked = meta.later === true;
+  const pr = {
+    number: item.number,
+    repo,
+    html_url: item.html_url,
+    title: item.title,
+    draft: item.draft,
+    updated_at: item.updated_at,
+    comments: item.comments ?? 0,
+    baseRef: null,
+    headRef: null,
+    conflicts: false,
+    additions: null,
+    deletions: null,
+    queue: extra.queue ?? null,
+    review: extra.review ?? null,
+    tracked: item.tracked ?? false,
+    author,
+    avatar: item.user?.avatar_url
+      ? `${item.user.avatar_url}${item.user.avatar_url.includes('?') ? '&' : '?'}s=48`
+      : null,
+    collab: Boolean(author) && author !== login,
+    group: meta.group ?? null,
+    note: meta.note ?? null,
+    later: parked,
+  };
+
+  const now = Date.now();
+  const cached = detailCache.get(item.html_url);
+  const usable =
+    cached && cached.updated_at === item.updated_at && (parked || now - cached.detailAt < DETAIL_TTL);
+  if (usable) {
+    const { detailAt, ...detail } = cached;
+    Object.assign(pr, detail);
+  } else {
+    try {
+      const detail = await (await fetch(item.pull_request.url, { headers: authHeaders(token) })).json();
+      pr.baseRef = detail.base?.ref ?? null;
+      pr.headRef = detail.head?.ref ?? null;
+      pr.conflicts = detail.mergeable_state === 'dirty';
+      pr.additions = detail.additions ?? null;
+      pr.deletions = detail.deletions ?? null;
+    } catch {
+      // leave defaults → treated as a root with no conflict info
+    }
+  }
+  // A cached CI state only stands in when the GraphQL call didn't cover this PR.
+  pr.ci = extra.ci ?? cached?.ci ?? null;
+  const { baseRef, headRef, conflicts, additions, deletions, ci, updated_at } = pr;
+  detailCache.set(item.html_url, {
+    baseRef, headRef, conflicts, additions, deletions, ci, updated_at,
+    detailAt: usable ? cached.detailAt : now,
+  });
+
+  pr.blockedBy = meta.blockedBy
+    ? ((await fetchBlocker(token, meta.blockedBy, repo)) ?? { spec: meta.blockedBy, state: 'open' })
+    : null;
+  return pr;
 }
 
 async function load() {
@@ -975,83 +1043,7 @@ async function load() {
     }
 
     const extras = await fetchPrExtras(token, items);
-
-    // Per PR: detail fetch for branch refs + mergeable + head sha, then a CI fetch.
-    // The expensive bits (detail + CI) only change when the PR does, so cache them
-    // keyed by url+updated_at and reuse on polls where updated_at is unchanged.
-    const prs = await Promise.all(
-      items.map(async (item) => {
-        const repo = item.repository_url.split('/repos/')[1] ?? '';
-        const extra = extras.get(item.node_id) ?? {};
-        const author = item.user?.login ?? null;
-        const pr = {
-          number: item.number,
-          repo,
-          html_url: item.html_url,
-          title: item.title,
-          draft: item.draft,
-          updated_at: item.updated_at,
-          comments: item.comments ?? 0,
-          baseRef: null,
-          headRef: null,
-          conflicts: false,
-          additions: null,
-          deletions: null,
-          ci: null,
-          queue: extra.queue ?? null,
-          review: extra.review ?? null,
-          tracked: item.tracked ?? false,
-          author,
-          avatar: item.user?.avatar_url
-            ? `${item.user.avatar_url}${item.user.avatar_url.includes('?') ? '&' : '?'}s=48`
-            : null,
-          collab: Boolean(author) && author !== login,
-        };
-        const meta = prMeta[item.html_url] ?? {};
-        const parked = meta.later === true;
-        const now = Date.now();
-        const cached = detailCache.get(item.html_url);
-        // A rerun, a job finishing, or the base branch moving all change a PR
-        // without touching updated_at, so both halves also expire on time.
-        const usable =
-          cached && cached.updated_at === item.updated_at && (parked || now - cached.detailAt < DETAIL_TTL);
-        if (usable) {
-          const { detailAt, ciAt, ...detail } = cached;
-          Object.assign(pr, detail);
-          if (!parked && (!pr.ci || pr.ci.state === 'pending' || now - ciAt > CI_TTL)) {
-            pr.ci = await fetchCi(token, repo, cached.headSha);
-            detailCache.set(item.html_url, { ...cached, ci: pr.ci, ciAt: now });
-          }
-        } else {
-          try {
-            const detail = await (
-              await fetch(item.pull_request.url, { headers: authHeaders(token) })
-            ).json();
-            pr.baseRef = detail.base?.ref ?? null;
-            pr.headRef = detail.head?.ref ?? null;
-            pr.conflicts = detail.mergeable_state === 'dirty';
-            pr.additions = detail.additions ?? null;
-            pr.deletions = detail.deletions ?? null;
-            const headSha = detail.head?.sha ?? null;
-            pr.ci = await fetchCi(token, repo, headSha);
-            const { baseRef, headRef, conflicts, additions, deletions, ci, updated_at } = pr;
-            detailCache.set(item.html_url, {
-              baseRef, headRef, conflicts, additions, deletions, ci, updated_at, headSha,
-              detailAt: now, ciAt: now,
-            });
-          } catch {
-            // leave defaults → treated as a root with no CI/conflict info
-          }
-        }
-        pr.group = meta.group ?? null;
-        pr.note = meta.note ?? null;
-        pr.later = parked;
-        pr.blockedBy = meta.blockedBy
-          ? ((await fetchBlocker(token, meta.blockedBy, repo)) ?? { spec: meta.blockedBy, state: 'open' })
-          : null;
-        return pr;
-      }),
-    );
+    const prs = await Promise.all(items.map((item) => hydrate(token, item, extras, login)));
 
     lastPrs = prs;
     renderList(buildModel(prs));
@@ -1239,7 +1231,7 @@ function openEditor(li, url) {
   const epicBox = document.createElement('input');
   epicBox.type = 'checkbox';
   epicBox.checked = categories.some((c) => c.epic === url);
-  epicWrap.append(epicBox, document.createTextNode('⭐ Epic — pin to the header'));
+  epicWrap.append(epicBox, document.createTextNode('⭐ Epic (pin to the header)'));
   const syncEpic = () => {
     epicWrap.style.display = catSel.value ? '' : 'none';
   };
@@ -1268,7 +1260,7 @@ function openEditor(li, url) {
 
   const noteIn = document.createElement('textarea');
   noteIn.rows = 2;
-  noteIn.placeholder = 'note — shows on hover';
+  noteIn.placeholder = 'note (shows on hover)';
   noteIn.value = meta.note ?? '';
 
   const parked = Boolean(meta.later);
@@ -1316,7 +1308,7 @@ function openEditor(li, url) {
       catId = newId();
       categories.push({ id: catId, name, emoji: style.getEmoji(), color: style.getColor(), epic: null, collapsed: false });
     }
-    const m = { group: catId, blockedBy: blockedIn.value.trim(), note: noteIn.value.trim() };
+    const m = { group: catId, blockedBy: blockedIn.value.trim(), note: noteIn.value.trim(), later: meta.later };
     for (const k of Object.keys(m)) if (!m[k]) delete m[k];
     if (Object.keys(m).length) prMeta[url] = m;
     else delete prMeta[url];
@@ -1620,7 +1612,7 @@ function cancelDnd() {
   clearTimeout(d.hoverTimer);
   cancelAnimationFrame(d.raf);
   d.ghost?.remove();
-  document.body.classList.remove('dnd', 'dnd-pr', 'dnd-cat', 'dnd-grouped');
+  document.body.classList.remove('dnd', 'dnd-pr', 'dnd-grouped');
   clearZones();
   markDragSource();
 }
@@ -1637,11 +1629,14 @@ function onDndMove(e) {
   if (!dnd.active) {
     if (Math.abs(e.clientX - dnd.x) + Math.abs(e.clientY - dnd.y) < 5) return;
     dnd.active = true;
-    document.body.classList.add('dnd', dnd.kind === 'pr' ? 'dnd-pr' : 'dnd-cat');
-    // Somewhere to aim for when every PR sits in a category and the list has no
-    // loose rows to drop beside.
-    const src = lastPrs.find((p) => p.html_url === dnd.id);
-    if (dnd.kind === 'pr' && !viewLater && src?.group) document.body.classList.add('dnd-grouped');
+    document.body.classList.add('dnd');
+    if (dnd.kind === 'pr') {
+      document.body.classList.add('dnd-pr');
+      // Somewhere to aim for when every PR sits in a category and the list has
+      // no loose rows to drop beside.
+      const src = lastPrs.find((p) => p.html_url === dnd.id);
+      if (!viewLater && src?.group) document.body.classList.add('dnd-grouped');
+    }
     hideTip();
     closeEditor();
     buildGhost();
@@ -1677,7 +1672,7 @@ async function onDndUp() {
     );
     anim.finished.then(() => ghost.remove(), () => ghost.remove());
   }
-  document.body.classList.remove('dnd', 'dnd-pr', 'dnd-cat', 'dnd-grouped');
+  document.body.classList.remove('dnd', 'dnd-pr', 'dnd-grouped');
   clearZones();
   markDragSource();
 
@@ -1890,7 +1885,7 @@ async function populateScopeSelect() {
       const res = await fetch('https://api.github.com/user/orgs?per_page=100', { headers: authHeaders(token) });
       if (res.ok) for (const o of await res.json()) sel.appendChild(new Option(`org:${o.login}`, `org:${o.login}`));
     } catch {
-      /* offline or token lacks read:org — the custom option still covers it */
+      /* offline or token lacks read:org, the custom option still covers it */
     }
   }
   sel.appendChild(new Option('one repo…', SCOPE_CUSTOM));

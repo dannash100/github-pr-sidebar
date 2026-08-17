@@ -14,7 +14,8 @@
 
 ### Fixed
 
-- CI and conflicts only refreshed when the PR itself changed, so a rerun that went green could read ✗ for hours. CI re-checks every 45 seconds, the rest every 5 minutes.
+- CI counted every check run on the commit, so a workflow that was rerun and went green still showed ✗ from the superseded run. It now counts the newest suite per workflow and trigger, the same way the PR page does, and rides on the poll's existing GraphQL call instead of a request per PR.
+- Conflicts only refreshed when the PR itself changed, so one caused by the base branch moving stayed hidden. The rest of the detail now expires after 5 minutes.
 - A drag released outside the sidebar left its card stuck on screen.
 - Grabbing a row by an avatar started the browser's own drag on top of ours.
 
