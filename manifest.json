@@ -1,0 +1,31 @@
+{
+  "manifest_version": 2,
+  "name": "PR Sidebar",
+  "version": "1.3",
+  "description": "Lists your open GitHub pull requests in the Firefox sidebar. Talks only to api.github.com with a read-only token.",
+  "author": "Daniel Nash",
+  "permissions": [
+    "storage",
+    "tabs",
+    "https://api.github.com/*"
+  ],
+  "icons": {
+    "16": "icon.svg",
+    "32": "icon.svg",
+    "48": "icon.svg",
+    "128": "icon.svg"
+  },
+  "sidebar_action": {
+    "default_title": "Open PRs",
+    "default_panel": "panel.html",
+    "default_icon": "icon.svg"
+  },
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "my-prs-sidebar@danielnash",
+      "data_collection_permissions": {
+        "required": ["authenticationInfo"]
+      }
+    }
+  }
+}
