@@ -12,8 +12,11 @@
 - The bar marking the PR you're viewing takes its category's colour instead of always being blue.
 - Dragging a PR out of a category aims at a labelled area filling the rest of the panel, rather than the sliver of space below the last category.
 
+- Titles line up whether or not a PR has a stack to expand: the ▾ moved into its own gutter beside the accent bar.
+
 ### Fixed
 
+- CI and conflict state only refreshed when the PR itself changed, so a rerun that went green, or a conflict from the base moving, could sit wrong for hours. CI re-checks on a 45 second age, the rest of the detail every 5 minutes.
 - A drag released outside the sidebar left its card stuck on screen.
 - Grabbing a row by an avatar or a link started the browser's own drag on top of ours.
 
