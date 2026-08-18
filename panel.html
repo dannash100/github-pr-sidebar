@@ -255,7 +255,7 @@
     #refresh.spin svg { animation: spin 0.9s linear infinite; }
     @keyframes spin { to { transform: rotate(360deg); } }
 
-    li.pr { position: relative; border-radius: 9px; margin-bottom: 3px; }
+    li.pr { position: relative; border-radius: 0 9px 9px 0; margin-bottom: 3px; }
     li.pr > a {
       display: block;
       padding: 8px 28px 8px 22px;
@@ -268,9 +268,8 @@
     li.pr.active::before {
       content: '';
       position: absolute;
-      left: 0; top: 7px; bottom: 7px;
+      left: 0; top: 0; bottom: 0;
       width: 3px;
-      border-radius: 999px;
       background: var(--sec-accent, var(--accent));
       opacity: 0.85;
     }
@@ -410,7 +409,7 @@
     }
     body.dnd-pr .epic-slot { display: inline-flex; }
 
-    .sec-list { padding: 2px 6px 6px 7px; }
+    .sec-list { padding: 2px 6px 6px 0; }
     .sec-list > li:last-child { margin-bottom: 0; }
     .sec-empty {
       margin: 2px 7px 8px;
@@ -431,7 +430,6 @@
     }
     li.epic > a { padding: 7px 28px 8px 22px; }
     li.epic > a:hover { background: rgba(128, 128, 128, 0.06); }
-    li.epic.active::before { top: 6px; bottom: 6px; }
     .epic-kicker {
       display: flex;
       align-items: center;
