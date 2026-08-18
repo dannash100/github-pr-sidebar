@@ -559,10 +559,17 @@ function autoExpandActive(model) {
   return changed;
 }
 
-function hotfixToggleText(pr) {
+function setToggleLabel(el, arrow, label) {
+  const a = document.createElement('span');
+  a.className = 'arrow';
+  a.textContent = arrow;
+  el.replaceChildren(a, document.createTextNode(` ${label}`));
+}
+
+function fillHotfixToggle(el, pr) {
   const fails = pr.hotfixes.filter((h) => h.ci?.state === 'fail').length;
-  const arrow = expandedGroups.has(pr.groupKey) ? '▾' : '▸';
-  return `${arrow} 🔥 ${pr.hotfixes.length} hotfixes${fails ? ` (${fails} ✗)` : ''}`;
+  const label = `🔥 ${pr.hotfixes.length} hotfixes${fails ? ` (${fails} ✗)` : ''}`;
+  setToggleLabel(el, expandedGroups.has(pr.groupKey) ? '▾' : '▸', label);
 }
 
 function chip(text, cls, tip) {
@@ -661,14 +668,14 @@ function buildMeta(pr) {
     const s = document.createElement('span');
     s.className = 'stack-toggle';
     s.dataset.twist = pr.html_url;
-    s.textContent = `▸ ${flattenNodes(pr.children).length} stacked`;
+    setToggleLabel(s, '▸', `${flattenNodes(pr.children).length} stacked`);
     metaEl.appendChild(s);
   }
   if (pr.hotfixes) {
     const t = document.createElement('span');
     t.className = 'hf-toggle';
     t.dataset.group = pr.groupKey;
-    t.textContent = hotfixToggleText(pr);
+    fillHotfixToggle(t, pr);
     metaEl.appendChild(t);
   }
   return metaEl;
@@ -734,7 +741,7 @@ function renderNode(pr, depth) {
     metaEl.className = 'meta';
     const t = document.createElement('span');
     t.className = 'hf-toggle';
-    t.textContent = hotfixToggleText(pr);
+    fillHotfixToggle(t, pr);
     metaEl.appendChild(t);
     a.append(titleEl, metaEl);
     li.appendChild(a);
