@@ -157,12 +157,24 @@ async function graphql(token, query, ids) {
 // Review decision and merge-queue position: neither is in the REST search
 // results, and both come back in a fraction of the time the check suites take.
 const EXTRAS_QUERY =
-  'query($ids:[ID!]!){nodes(ids:$ids){... on PullRequest{id reviewDecision mergeQueueEntry{state position}}}}';
+  'query($ids:[ID!]!){nodes(ids:$ids){... on PullRequest{id reviewDecision' +
+  ' latestOpinionatedReviews(first:20){nodes{state author{login}}}' +
+  ' mergeQueueEntry{state position}}}}';
 
 async function fetchPrExtras(token, items) {
   const map = new Map();
   for (const node of await graphql(token, EXTRAS_QUERY, items.map((i) => i.node_id).filter(Boolean))) {
-    if (node?.id) map.set(node.id, { queue: node.mergeQueueEntry ?? null, review: node.reviewDecision ?? null });
+    if (!node?.id) continue;
+    // reviewDecision comes from branch protection, so a repo that doesn't require
+    // a review reports null however many approvals are in.
+    const latest = node.latestOpinionatedReviews?.nodes ?? [];
+    const approvals = latest.filter((r) => r.state === 'APPROVED').map((r) => r.author?.login).filter(Boolean);
+    const rejected = latest.some((r) => r.state === 'CHANGES_REQUESTED');
+    map.set(node.id, {
+      queue: node.mergeQueueEntry ?? null,
+      review: rejected ? 'CHANGES_REQUESTED' : approvals.length ? 'APPROVED' : (node.reviewDecision ?? null),
+      approvals,
+    });
   }
   return map;
 }
@@ -643,8 +655,12 @@ function buildMeta(pr) {
       chip(pr.queue.position != null ? `⏳ queue #${pr.queue.position}` : '⏳ in queue', 'tint-purple'),
     );
   }
-  if (pr.review === 'APPROVED') metaEl.appendChild(chip('✓ approved', 'tint-green'));
-  else if (pr.review === 'CHANGES_REQUESTED') metaEl.appendChild(chip('± changes requested', 'tint-red'));
+  if (pr.review === 'APPROVED') {
+    const by = pr.approvals?.length ? `Approved by ${pr.approvals.map((l) => `@${l}`).join(', ')}` : '';
+    metaEl.appendChild(chip('✓ approved', 'tint-green', by));
+  } else if (pr.review === 'CHANGES_REQUESTED') {
+    metaEl.appendChild(chip('± changes requested', 'tint-red'));
+  }
   if (pr.conflicts) metaEl.appendChild(chip('⚠ conflicts', 'tint-red'));
   if (pr.blockedBy) {
     const bl = pr.blockedBy;
@@ -932,7 +948,7 @@ const rerender = () => renderList(buildModel(lastPrs));
 const SNAPSHOT_FIELDS = [
   'number', 'repo', 'html_url', 'title', 'draft', 'updated_at', 'comments',
   'baseRef', 'headRef', 'conflicts', 'additions', 'deletions', 'ci', 'queue',
-  'review', 'blockedBy', 'tracked', 'author', 'avatar', 'collab', 'group', 'note', 'later',
+  'review', 'approvals', 'blockedBy', 'tracked', 'author', 'avatar', 'collab', 'group', 'note', 'later',
 ];
 let savedSnapshot = '';
 
@@ -1007,6 +1023,7 @@ function shellPr(item, login) {
     ci: null,
     queue: null,
     review: null,
+    approvals: [],
     blockedBy: null,
     tracked: item.tracked ?? false,
     author,
@@ -1050,6 +1067,7 @@ async function hydrate(token, item, extras, login) {
   const extra = (await extras).get(item.node_id) ?? {};
   pr.queue = extra.queue ?? null;
   pr.review = extra.review ?? null;
+  pr.approvals = extra.approvals ?? [];
   pr.ci = ciCache.get(item.html_url)?.ci ?? null; // settleCi fills this in behind the render
   const { baseRef, headRef, conflicts, additions, deletions, updated_at } = pr;
   detailCache.set(item.html_url, {
