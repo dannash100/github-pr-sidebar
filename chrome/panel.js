@@ -1343,6 +1343,15 @@ function assignCategory(url, catId) {
   saveCats();
 }
 
+// A category shelves as its members plus whatever is stacked on top of them.
+function catMemberUrls(id) {
+  const urls = new Set();
+  for (const p of lastPrs) {
+    if (p.group === id) for (const u of withDescendants(p.html_url)) urls.add(u);
+  }
+  return [...urls];
+}
+
 // A PR and everything stacked on top of it move as one unit.
 function withDescendants(url) {
   const start = lastPrs.find((p) => p.html_url === url);
@@ -1545,6 +1554,18 @@ function openCatEditor(li, id) {
     rows.push(clearEpic);
   }
 
+  if (lastPrs.some((p) => p.group === id && !p.later)) {
+    const shelve = document.createElement('button');
+    shelve.className = 'wide';
+    shelve.textContent = 'Save all for later';
+    shelve.addEventListener('click', () => {
+      setLater(catMemberUrls(id), true);
+      closeEditor();
+      rerender();
+    });
+    rows.push(shelve);
+  }
+
   save.addEventListener('click', async () => {
     const c = catById(id) ?? cat;
     c.name = nameIn.value.trim() || c.name;
@@ -1615,14 +1636,14 @@ function clearZones() {
 function zoneAt(x, y) {
   const el = document.elementFromPoint(x, y);
   if (!el?.closest) return { kind: 'none' };
+  // The whole header takes the drop, so a flick to the top edge lands it.
+  if (el.closest('header')) return { kind: 'later', el: shelfDrop, id: null };
   if (dnd.kind === 'cat') {
     const sec = el.closest('li.section[data-cat]');
     if (!sec || sec.dataset.cat === dnd.id) return { kind: 'none' };
     const r = sec.getBoundingClientRect();
     return { kind: 'reorder', el: sec, id: sec.dataset.cat, before: y < r.top + r.height / 2 };
   }
-  // The whole header takes the drop, so a flick to the top edge lands it.
-  if (el.closest('header')) return { kind: 'later', el: shelfDrop, id: null };
   if (viewLater) return { kind: 'none' }; // the shelf is a holding pen; only the button moves a PR
   const slot = el.closest('[data-epic-slot]');
   if (slot) return { kind: 'epic', el: slot, id: slot.dataset.epicSlot };
@@ -1831,13 +1852,16 @@ async function onDndUp() {
 
   const zone = d.zone;
   if (d.kind === 'cat') {
-    if (zone.kind !== 'reorder') return;
-    const from = categories.findIndex((c) => c.id === d.id);
-    const moved = categories.splice(from, 1)[0];
-    let to = categories.findIndex((c) => c.id === zone.id);
-    if (!zone.before) to += 1;
-    categories.splice(to, 0, moved);
-    await saveCats();
+    if (zone.kind === 'later') {
+      setLater(catMemberUrls(d.id), true);
+    } else if (zone.kind === 'reorder') {
+      const from = categories.findIndex((c) => c.id === d.id);
+      const moved = categories.splice(from, 1)[0];
+      let to = categories.findIndex((c) => c.id === zone.id);
+      if (!zone.before) to += 1;
+      categories.splice(to, 0, moved);
+      await saveCats();
+    } else return;
   } else if (zone.kind === 'later') {
     setLater(withDescendants(d.id), !viewLater);
     justDropped = d.id;
