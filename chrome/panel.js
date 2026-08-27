@@ -506,16 +506,15 @@ function prMatches(pr, q) {
   return `${pr.title} ${pr.repo} #${pr.number} ${pr.author ?? ''}`.toLowerCase().includes(q);
 }
 
-// The shelf is one flat list rather than a second set of categories: it's a
-// holding pen, and a PR keeps whatever category it had for when it comes back.
+// A category and its PRs shelve as a unit, so each view renders the categories
+// that belong to it. A PR whose category sits in the other view falls loose
+// until it comes back.
 function buildModel(prs) {
   const q = filterText.trim().toLowerCase();
   const shelved = prs.filter((p) => Boolean(p.later) === viewLater);
   const items = q ? shelved.filter((p) => prMatches(p, q)) : shelved;
-  if (viewLater) {
-    return { sections: [], roots: blockedLast(groupHotfixes(buildForest(items))), shown: items.length, all: shelved.length };
-  }
-  const known = new Set(categories.map((c) => c.id));
+  const cats = categories.filter((c) => Boolean(c.later) === viewLater);
+  const known = new Set(cats.map((c) => c.id));
   const byCat = new Map();
   const loose = [];
   for (const pr of items) {
@@ -527,7 +526,7 @@ function buildModel(prs) {
     }
   }
 
-  const sections = categories
+  const sections = cats
     .map((c) => {
       const members = byCat.get(c.id) ?? [];
       const forest = buildForest(members);
@@ -864,7 +863,7 @@ function renderSection(sec) {
     } else {
       const hint = document.createElement('div');
       hint.className = 'sec-empty';
-      hint.textContent = 'Drag PRs here';
+      hint.textContent = viewLater ? 'Empty' : 'Drag PRs here';
       li.appendChild(hint);
     }
   }
@@ -901,7 +900,7 @@ function renderList(model) {
       p.textContent = 'Clear the filter to see everything.';
     } else if (viewLater) {
       b.textContent = 'Nothing here for later';
-      p.textContent = 'Drag a PR up to the top of the panel to park it, or use ⋯ on its row.';
+      p.textContent = 'Drag a PR or a category up to the top of the panel to park it, or use ⋯ on it.';
     } else {
       b.textContent = 'No open PRs';
       p.textContent = 'Open one, or track someone else’s from ＋.';
@@ -1343,13 +1342,19 @@ function assignCategory(url, catId) {
   saveCats();
 }
 
-// A category shelves as its members plus whatever is stacked on top of them.
-function catMemberUrls(id) {
+// A category moves to the shelf whole: the header goes with its members and
+// whatever is stacked on top of them, so it reappears intact on the other side.
+function shelveCategory(id, on) {
+  const cat = catById(id);
+  if (!cat) return;
+  if (on) cat.later = true;
+  else delete cat.later;
   const urls = new Set();
   for (const p of lastPrs) {
     if (p.group === id) for (const u of withDescendants(p.html_url)) urls.add(u);
   }
-  return [...urls];
+  setLater([...urls], on);
+  saveCats();
 }
 
 // A PR and everything stacked on top of it move as one unit.
@@ -1377,7 +1382,13 @@ function openEditor(li, url) {
   const NEW_CAT = ' new';
   const catSel = document.createElement('select');
   catSel.appendChild(new Option('no category', ''));
-  for (const c of categories) catSel.appendChild(new Option(`${c.emoji || '📌'} ${c.name}`, c.id));
+  // Only this view's categories are offered; the PR's own stays listed even when
+  // it sits in the other one, or saving would drop it.
+  for (const c of categories) {
+    if (Boolean(c.later) === viewLater || c.id === meta.group) {
+      catSel.appendChild(new Option(`${c.emoji || '📌'} ${c.name}`, c.id));
+    }
+  }
   catSel.appendChild(new Option('+ new category…', NEW_CAT));
   catSel.value = catById(meta.group) ? meta.group : '';
 
@@ -1468,7 +1479,9 @@ function openEditor(li, url) {
         return;
       }
       catId = newId();
-      categories.push({ id: catId, name, emoji: style.getEmoji(), color: style.getColor(), epic: null, collapsed: false });
+      const cat = { id: catId, name, emoji: style.getEmoji(), color: style.getColor(), epic: null, collapsed: false };
+      if (viewLater) cat.later = true;
+      categories.push(cat);
     }
     const m = { group: catId, blockedBy: blockedIn.value.trim(), note: noteIn.value.trim(), later: meta.later };
     for (const k of Object.keys(m)) if (!m[k]) delete m[k];
@@ -1554,17 +1567,16 @@ function openCatEditor(li, id) {
     rows.push(clearEpic);
   }
 
-  if (lastPrs.some((p) => p.group === id && !p.later)) {
-    const shelve = document.createElement('button');
-    shelve.className = 'wide';
-    shelve.textContent = 'Save all for later';
-    shelve.addEventListener('click', () => {
-      setLater(catMemberUrls(id), true);
-      closeEditor();
-      rerender();
-    });
-    rows.push(shelve);
-  }
+  const parked = Boolean(cat.later);
+  const shelve = document.createElement('button');
+  shelve.className = 'wide';
+  shelve.textContent = parked ? 'Move back to the list' : 'Save all for later';
+  shelve.addEventListener('click', () => {
+    shelveCategory(id, !parked);
+    closeEditor();
+    rerender();
+  });
+  rows.push(shelve);
 
   save.addEventListener('click', async () => {
     const c = catById(id) ?? cat;
@@ -1853,7 +1865,7 @@ async function onDndUp() {
   const zone = d.zone;
   if (d.kind === 'cat') {
     if (zone.kind === 'later') {
-      setLater(catMemberUrls(d.id), true);
+      shelveCategory(d.id, !viewLater);
     } else if (zone.kind === 'reorder') {
       const from = categories.findIndex((c) => c.id === d.id);
       const moved = categories.splice(from, 1)[0];
@@ -1970,6 +1982,7 @@ $('shelfback').addEventListener('click', () => setView(false));
 async function newCategory() {
   closeEditor();
   const cat = { id: newId(), name: `Category ${categories.length + 1}`, emoji: '📌', color: '', epic: null, collapsed: false };
+  if (viewLater) cat.later = true;
   categories.push(cat);
   await saveCats();
   rerender();
