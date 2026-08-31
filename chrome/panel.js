@@ -1310,71 +1310,71 @@ const GROUP_PATTERNS = [
   ['confetti', 'confetti', () => [
     layer(
       svgTile(
-        56,
-        56,
+        34,
+        34,
         `<g stroke-width='2.2' stroke-linecap='round' opacity='0.42'>` +
-          scatter(7, 3, 3, 56, 56, (x, y, k, i) =>
+          scatter(7, 2, 2, 34, 34, (x, y, k, i) =>
             `<path d='M0 0 l0 ${n1(-4 - k * 3)}' stroke='${CONFETTI_HUES[i % 5]}' transform='translate(${n1(x)} ${n1(y)}) rotate(${Math.round(k * 340)})'/>`,
           ) +
           `</g>`,
       ),
-      '56px 56px',
+      '34px 34px',
     ),
   ]],
   ['sparkles', 'sparkles', (t) => [
     layer(
       svgTile(
-        60,
-        60,
+        30,
+        30,
         `<g fill='rgba(${t}, 0.3)'>` +
-          scatter(3, 3, 3, 60, 60, (x, y, k) =>
+          scatter(3, 2, 2, 30, 30, (x, y, k) =>
             `<path d='${SPARKLE}' transform='translate(${n1(x)} ${n1(y)}) rotate(${Math.round(k * 90)}) scale(${(0.55 + k * 0.75).toFixed(2)})'/>`,
           ) +
           `</g>`,
       ),
-      '60px 60px',
+      '30px 30px',
     ),
   ]],
   ['hearts', 'hearts', (t) => [
     layer(
       svgTile(
-        66,
-        60,
+        48,
+        44,
         `<g fill='rgba(${t}, 0.17)'>` +
-          scatter(11, 3, 3, 66, 60, (x, y, k) =>
-            `<path d='${HEART}' transform='translate(${n1(x)} ${n1(y)}) rotate(${Math.round(k * 50 - 25)}) scale(${(0.6 + k * 0.45).toFixed(2)})'/>`,
+          scatter(11, 2, 2, 48, 44, (x, y, k) =>
+            `<path d='${HEART}' transform='translate(${n1(x)} ${n1(y)}) rotate(${Math.round(k * 50 - 25)}) scale(${(0.8 + k * 0.35).toFixed(2)})'/>`,
           ) +
           `</g>`,
       ),
-      '66px 60px',
+      '48px 44px',
     ),
   ]],
   ['rainbow squiggles', 'rainbow-squiggle', () => [
     layer(
       svgTile(
         48,
-        42,
-        [7, 21, 35]
-          .map((y, i) => wave(y, `rgba(${RAINBOW_HUES[i * 2]}, 0.32)`, 48, { amp: [5.5, 4, 6][i], dx: i * 9 }))
+        30,
+        [5, 15, 25]
+          .map((y, i) => wave(y, `rgba(${RAINBOW_HUES[i * 2]}, 0.32)`, 48, { amp: [4.5, 3.4, 5][i], dx: i * 9 }))
           .join(''),
       ),
-      '48px 42px',
+      '48px 30px',
     ),
   ]],
   ['polka dots', 'dots', (t) => [
-    layer(`radial-gradient(rgba(${t}, 0.3) 1.7px, transparent 1.9px)`, '18px 18px'),
-    layer(`radial-gradient(rgba(${t}, 0.3) 1.7px, transparent 1.9px)`, '18px 18px', '9px 9px'),
+    layer(`radial-gradient(rgba(${t}, 0.3) 1.7px, transparent 1.9px)`, '17px 17px'),
+    layer(`radial-gradient(rgba(${t}, 0.3) 1.7px, transparent 1.9px)`, '17px 17px', '8.5px 8.5px'),
   ]],
   ['bubbles', 'bubbles', (t) => [
     layer(
       svgTile(
-        48,
-        48,
+        36,
+        36,
         `<g fill='rgba(${t}, 0.28)'>` +
-          scatter(5, 3, 3, 48, 48, (x, y, k) => `<circle cx='${n1(x)}' cy='${n1(y)}' r='${n1(1.3 + k * 3.2)}'/>`) +
+          scatter(5, 2, 2, 36, 36, (x, y, k) => `<circle cx='${n1(x)}' cy='${n1(y)}' r='${n1(1.3 + k * 3.2)}'/>`) +
           `</g>`,
       ),
-      '48px 48px',
+      '36px 36px',
     ),
   ]],
   ['rainbow dots', 'rainbow-dots', () =>
@@ -1406,12 +1406,12 @@ const GROUP_PATTERNS = [
   ]],
   ['squiggles', 'squiggle', (t) => [
     layer(
-      svgTile(48, 32, wave(9, `rgba(${t}, 0.28)`, 48) + wave(25, `rgba(${t}, 0.28)`, 48, { amp: 4.5, dx: 12 })),
-      '48px 32px',
+      svgTile(48, 40, wave(11, `rgba(${t}, 0.28)`, 48) + wave(31, `rgba(${t}, 0.28)`, 48, { amp: 4.5, dx: 12 })),
+      '48px 40px',
     ),
   ]],
   ['zigzag', 'zigzag', (t) => [
-    layer(svgTile(24, 20, `<path d='M0 15 L6 6 L12 15 L18 6 L24 15' fill='none' stroke='rgba(${t}, 0.24)' stroke-width='1.5'/>`), '24px 20px'),
+    layer(svgTile(16, 16, `<path d='M0 11 L4 5 L8 11 L12 5 L16 11' fill='none' stroke='rgba(${t}, 0.24)' stroke-width='1.5'/>`), '16px 16px'),
   ]],
 ];
 
