@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- **Category textures.** Alongside the colour, a category can carry a background pattern: polka dots, bubbles, diagonal stripes, grid, checks, crosshatch, squiggles, zigzag, confetti, sparkles, hearts, plus rainbow cuts of dots, stripes and squiggles. The swatches preview in the category's own hue.
+- Nine more colours (slate, coral, lime, mint, cyan, indigo, magenta, brown) and a rainbow tint that washes the whole section.
+
 ## 1.3 — 2026-08-18
 
 ### Added

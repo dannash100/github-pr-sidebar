@@ -798,13 +798,7 @@ function renderSection(sec) {
   li.dataset.cat = sec.id;
   // Resting fill is a lighter cut of the stored colour; the stored value is the
   // hover, handed down via --sec-hover so row hovers inside match.
-  const rgb = sec.color?.match(/[\d.]+,\s*[\d.]+,\s*[\d.]+/)?.[0];
-  if (rgb) {
-    li.style.setProperty('--sec-bg', `rgba(${rgb}, 0.06)`);
-    li.style.setProperty('--sec-hover', sec.color);
-    li.style.setProperty('--sec-active', `rgba(${rgb}, 0.18)`);
-    li.style.setProperty('--sec-accent', `rgb(${rgb})`);
-  }
+  paintSkin(li, sec.color, sec.pattern);
 
   const head = document.createElement('div');
   head.className = 'sec-head';
@@ -1254,17 +1248,157 @@ for (const [lo, hi] of [
     if (ch !== '📌' && /\p{Emoji_Presentation}/u.test(ch)) GROUP_EMOJIS.push(ch);
   }
 }
+const RAINBOW = 'rainbow';
+const RAINBOW_HUES = [
+  '248, 81, 73',
+  '240, 136, 62',
+  '210, 153, 34',
+  '63, 185, 80',
+  '57, 197, 187',
+  '56, 139, 253',
+  '163, 113, 247',
+];
+const GREY = '128, 128, 128';
+
+const svgTile = (w, h, body) =>
+  `url("data:image/svg+xml,${encodeURIComponent(
+    `<svg xmlns='http://www.w3.org/2000/svg' width='${w}' height='${h}'>${body}</svg>`,
+  )}")`;
+const wave = (y, c) => `<path d='M0 ${y} Q6 ${y - 6} 12 ${y} T24 ${y}' fill='none' stroke='${c}' stroke-width='1.5'/>`;
+const layer = (img, size, pos) => ({ img, size: size || 'auto', pos: pos || '0 0' });
+
+// A pattern builds one or more background layers over the section tint. `t` is
+// the section's rgb triple, so mono patterns take the category's own hue and
+// rainbow ones ignore it.
+const GROUP_PATTERNS = [
+  ['plain', '', () => []],
+  ['polka dots', 'dots', (t) => [layer(`radial-gradient(rgba(${t}, 0.3) 1.7px, transparent 1.9px)`, '12px 12px')]],
+  ['bubbles', 'bubbles', (t) => [
+    layer(`radial-gradient(rgba(${t}, 0.26) 3.4px, transparent 3.8px)`, '26px 26px'),
+    layer(`radial-gradient(rgba(${t}, 0.34) 1.4px, transparent 1.7px)`, '26px 26px', '13px 13px'),
+  ]],
+  ['rainbow dots', 'rainbow-dots', () =>
+    [0, 2, 4, 6].map((h, i) =>
+      layer(
+        `radial-gradient(rgba(${RAINBOW_HUES[h]}, 0.34) 1.8px, transparent 2px)`,
+        '22px 22px',
+        ['0 0', '11px 11px', '11px 0', '0 11px'][i],
+      ),
+    )],
+  ['diagonal stripes', 'stripes', (t) => [
+    layer(`repeating-linear-gradient(45deg, rgba(${t}, 0.12) 0 3px, transparent 3px 15px)`),
+  ]],
+  ['rainbow stripes', 'rainbow-stripes', () => [
+    layer(
+      `repeating-linear-gradient(45deg, ${RAINBOW_HUES.map(
+        (h, i) => `rgba(${h}, 0.1) ${i * 8}px ${(i + 1) * 8}px`,
+      ).join(', ')})`,
+    ),
+  ]],
+  ['grid', 'grid', (t) => [
+    layer(`linear-gradient(rgba(${t}, 0.14) 1px, transparent 1px)`, '16px 16px'),
+    layer(`linear-gradient(90deg, rgba(${t}, 0.14) 1px, transparent 1px)`, '16px 16px'),
+  ]],
+  ['checks', 'checks', (t) => [layer(`repeating-conic-gradient(rgba(${t}, 0.11) 0% 25%, transparent 0% 50%)`, '18px 18px')]],
+  ['crosshatch', 'crosshatch', (t) => [
+    layer(`repeating-linear-gradient(45deg, rgba(${t}, 0.12) 0 1px, transparent 1px 11px)`),
+    layer(`repeating-linear-gradient(-45deg, rgba(${t}, 0.12) 0 1px, transparent 1px 11px)`),
+  ]],
+  ['squiggles', 'squiggle', (t) => [layer(svgTile(24, 20, wave(9, `rgba(${t}, 0.28)`)), '24px 20px')]],
+  ['rainbow squiggles', 'rainbow-squiggle', () => [
+    layer(svgTile(24, 30, [5, 15, 25].map((y, i) => wave(y, `rgba(${RAINBOW_HUES[i * 2]}, 0.32)`)).join('')), '24px 30px'),
+  ]],
+  ['zigzag', 'zigzag', (t) => [
+    layer(svgTile(16, 16, `<path d='M0 11 L4 5 L8 11 L12 5 L16 11' fill='none' stroke='rgba(${t}, 0.24)' stroke-width='1.5'/>`), '16px 16px'),
+  ]],
+  ['confetti', 'confetti', () => [
+    layer(
+      svgTile(
+        34,
+        34,
+        `<g stroke-width='2.2' stroke-linecap='round' opacity='0.4'>` +
+          `<path d='M4 6 l3 -4' stroke='rgb(248, 81, 73)'/>` +
+          `<path d='M21 4 l2 4' stroke='rgb(63, 185, 80)'/>` +
+          `<path d='M12 15 l4 -2' stroke='rgb(56, 139, 253)'/>` +
+          `<path d='M25 19 l-2 4' stroke='rgb(210, 153, 34)'/>` +
+          `<path d='M6 24 l3 3' stroke='rgb(163, 113, 247)'/>` +
+          `</g>`,
+      ),
+      '34px 34px',
+    ),
+  ]],
+  ['sparkles', 'sparkles', (t) => [
+    layer(
+      svgTile(
+        22,
+        22,
+        `<g fill='rgba(${t}, 0.28)'>` +
+          `<path d='M6 1 Q7 5 11 6 Q7 7 6 11 Q5 7 1 6 Q5 5 6 1Z'/>` +
+          `<path d='M16 12 Q16.7 14.6 19 15 Q16.7 15.4 16 18 Q15.3 15.4 13 15 Q15.3 14.6 16 12Z'/>` +
+          `</g>`,
+      ),
+      '22px 22px',
+    ),
+  ]],
+  ['hearts', 'hearts', (t) => [
+    layer(
+      svgTile(24, 22, `<path d='M10 15 C2 10 3 3 6.5 3 C8.4 3 9.6 4.4 10 5.4 C10.4 4.4 11.6 3 13.5 3 C17 3 18 10 10 15Z' fill='rgba(${t}, 0.17)'/>`),
+      '24px 22px',
+    ),
+  ]],
+];
+
+function patternLayers(id, t) {
+  const p = GROUP_PATTERNS.find((x) => x[1] === (id || ''));
+  return p ? p[2](t || GREY) : [];
+}
+
+const rgbOf = (color) => (color === RAINBOW ? '' : color?.match(/[\d.]+,\s*[\d.]+,\s*[\d.]+/)?.[0] || '');
+
+// Paints a category's tint and texture onto an element as the --sec-* vars the
+// stylesheet reads; rainbow drops in under the pattern as its own bottom layer.
+function paintSkin(el, color, pattern) {
+  const rgb = rgbOf(color);
+  if (rgb) {
+    el.style.setProperty('--sec-bg', `rgba(${rgb}, 0.06)`);
+    el.style.setProperty('--sec-hover', color);
+    el.style.setProperty('--sec-active', `rgba(${rgb}, 0.18)`);
+    el.style.setProperty('--sec-accent', `rgb(${rgb})`);
+  } else if (color === RAINBOW) {
+    el.style.setProperty('--sec-hover', 'rgba(128, 128, 128, 0.1)');
+    el.style.setProperty('--sec-active', 'rgba(128, 128, 128, 0.18)');
+    el.style.setProperty('--sec-accent', 'rgb(163, 113, 247)');
+  }
+  const layers = patternLayers(pattern, rgb);
+  if (color === RAINBOW) {
+    layers.push(layer(`linear-gradient(115deg, ${RAINBOW_HUES.map((h) => `rgba(${h}, 0.14)`).join(', ')})`, 'cover'));
+  }
+  if (!layers.length) return;
+  el.style.setProperty('--sec-pattern', layers.map((l) => l.img).join(', '));
+  el.style.setProperty('--sec-pattern-size', layers.map((l) => l.size).join(', '));
+  el.style.setProperty('--sec-pattern-pos', layers.map((l) => l.pos).join(', '));
+}
+
 const GROUP_COLORS = [
   ['no colour', ''],
   ['grey', 'rgba(128, 128, 128, 0.1)'],
+  ['slate', 'rgba(125, 139, 161, 0.1)'],
   ['red', 'rgba(248, 81, 73, 0.1)'],
+  ['coral', 'rgba(255, 122, 89, 0.1)'],
   ['orange', 'rgba(240, 136, 62, 0.1)'],
   ['yellow', 'rgba(210, 153, 34, 0.1)'],
+  ['lime', 'rgba(146, 205, 62, 0.1)'],
   ['green', 'rgba(63, 185, 80, 0.1)'],
+  ['mint', 'rgba(52, 211, 153, 0.1)'],
   ['teal', 'rgba(57, 197, 187, 0.1)'],
+  ['cyan', 'rgba(56, 189, 248, 0.1)'],
   ['blue', 'rgba(56, 139, 253, 0.1)'],
+  ['indigo', 'rgba(110, 118, 245, 0.1)'],
   ['purple', 'rgba(163, 113, 247, 0.1)'],
+  ['magenta', 'rgba(214, 79, 232, 0.1)'],
   ['pink', 'rgba(219, 97, 162, 0.1)'],
+  ['brown', 'rgba(166, 124, 82, 0.1)'],
+  ['rainbow', RAINBOW],
 ];
 
 function makeStylePicker(initial) {
@@ -1298,18 +1432,42 @@ function makeStylePicker(initial) {
   // macOS draws native <select> popups and ignores option CSS, so colours are
   // swatch buttons showing stronger cuts of the stored hue.
   let color = initial?.color ?? '';
+  let pattern = initial?.pattern ?? '';
   const colorRow = document.createElement('div');
   colorRow.className = 'color-row';
+  const patRow = document.createElement('div');
+  patRow.className = 'pattern-row';
+
+  // Previews carry the live hue, so picking a colour repaints every swatch.
+  const paintPatterns = () => {
+    const t = rgbOf(color) || GREY;
+    for (const b of patRow.children) {
+      const ls = patternLayers(b.dataset.pattern, t);
+      b.style.backgroundImage = ls.length ? ls.map((l) => l.img).join(', ') : 'none';
+      b.style.backgroundSize = ls.map((l) => l.size).join(', ');
+      b.style.backgroundPosition = ls.map((l) => l.pos).join(', ');
+    }
+  };
   const setColor = (value) => {
     color = value;
     for (const b of colorRow.children) b.classList.toggle('sel', b.dataset.color === value);
+    paintPatterns();
   };
+  const setPattern = (value) => {
+    pattern = value;
+    for (const b of patRow.children) b.classList.toggle('sel', b.dataset.pattern === value);
+  };
+
   for (const [label, value] of GROUP_COLORS) {
     const b = document.createElement('button');
     b.className = 'color-cell';
     b.dataset.color = value;
     b.title = label;
-    const t = value.match(/[\d.]+,\s*[\d.]+,\s*[\d.]+/)?.[0];
+    if (value === RAINBOW) {
+      b.classList.add('rainbow');
+      b.style.setProperty('--ring', 'rgb(163, 113, 247)');
+    }
+    const t = rgbOf(value);
     if (t) {
       b.style.setProperty('--cell', `rgba(${t}, 0.35)`);
       b.style.setProperty('--cell-strong', `rgba(${t}, 0.65)`);
@@ -1318,15 +1476,25 @@ function makeStylePicker(initial) {
     b.addEventListener('click', () => setColor(value));
     colorRow.appendChild(b);
   }
+  for (const [label, value] of GROUP_PATTERNS) {
+    const b = document.createElement('button');
+    b.className = 'pattern-cell';
+    b.dataset.pattern = value;
+    b.title = label;
+    if (!value) b.textContent = '∅';
+    b.addEventListener('click', () => setPattern(value));
+    patRow.appendChild(b);
+  }
   setColor(color);
+  setPattern(pattern);
 
   const row = document.createElement('div');
   row.className = 'row';
   row.append(emojiBtn, colorRow);
   const wrap = document.createElement('div');
   wrap.className = 'style-picker';
-  wrap.append(row, grid);
-  return { getEmoji: () => emoji, getColor: () => color, row: wrap };
+  wrap.append(row, patRow, grid);
+  return { getEmoji: () => emoji, getColor: () => color, getPattern: () => pattern, row: wrap };
 }
 
 function assignCategory(url, catId) {
@@ -1479,7 +1647,7 @@ function openEditor(li, url) {
         return;
       }
       catId = newId();
-      const cat = { id: catId, name, emoji: style.getEmoji(), color: style.getColor(), epic: null, collapsed: false };
+      const cat = { id: catId, name, emoji: style.getEmoji(), color: style.getColor(), pattern: style.getPattern(), epic: null, collapsed: false };
       if (viewLater) cat.later = true;
       categories.push(cat);
     }
@@ -1583,6 +1751,7 @@ function openCatEditor(li, id) {
     c.name = nameIn.value.trim() || c.name;
     c.emoji = style.getEmoji();
     c.color = style.getColor();
+    c.pattern = style.getPattern();
     await saveCats();
     closeEditor();
     rerender();
