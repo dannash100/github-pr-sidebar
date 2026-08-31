@@ -1272,45 +1272,6 @@ const layer = (img, size, pos) => ({ img, size: size || 'auto', pos: pos || '0 0
 // rainbow ones ignore it.
 const GROUP_PATTERNS = [
   ['plain', '', () => []],
-  ['polka dots', 'dots', (t) => [layer(`radial-gradient(rgba(${t}, 0.3) 1.7px, transparent 1.9px)`, '12px 12px')]],
-  ['bubbles', 'bubbles', (t) => [
-    layer(`radial-gradient(rgba(${t}, 0.26) 3.4px, transparent 3.8px)`, '26px 26px'),
-    layer(`radial-gradient(rgba(${t}, 0.34) 1.4px, transparent 1.7px)`, '26px 26px', '13px 13px'),
-  ]],
-  ['rainbow dots', 'rainbow-dots', () =>
-    [0, 2, 4, 6].map((h, i) =>
-      layer(
-        `radial-gradient(rgba(${RAINBOW_HUES[h]}, 0.34) 1.8px, transparent 2px)`,
-        '22px 22px',
-        ['0 0', '11px 11px', '11px 0', '0 11px'][i],
-      ),
-    )],
-  ['diagonal stripes', 'stripes', (t) => [
-    layer(`repeating-linear-gradient(45deg, rgba(${t}, 0.12) 0 3px, transparent 3px 15px)`),
-  ]],
-  ['rainbow stripes', 'rainbow-stripes', () => [
-    layer(
-      `repeating-linear-gradient(45deg, ${RAINBOW_HUES.map(
-        (h, i) => `rgba(${h}, 0.1) ${i * 8}px ${(i + 1) * 8}px`,
-      ).join(', ')})`,
-    ),
-  ]],
-  ['grid', 'grid', (t) => [
-    layer(`linear-gradient(rgba(${t}, 0.14) 1px, transparent 1px)`, '16px 16px'),
-    layer(`linear-gradient(90deg, rgba(${t}, 0.14) 1px, transparent 1px)`, '16px 16px'),
-  ]],
-  ['checks', 'checks', (t) => [layer(`repeating-conic-gradient(rgba(${t}, 0.11) 0% 25%, transparent 0% 50%)`, '18px 18px')]],
-  ['crosshatch', 'crosshatch', (t) => [
-    layer(`repeating-linear-gradient(45deg, rgba(${t}, 0.12) 0 1px, transparent 1px 11px)`),
-    layer(`repeating-linear-gradient(-45deg, rgba(${t}, 0.12) 0 1px, transparent 1px 11px)`),
-  ]],
-  ['squiggles', 'squiggle', (t) => [layer(svgTile(24, 20, wave(9, `rgba(${t}, 0.28)`)), '24px 20px')]],
-  ['rainbow squiggles', 'rainbow-squiggle', () => [
-    layer(svgTile(24, 30, [5, 15, 25].map((y, i) => wave(y, `rgba(${RAINBOW_HUES[i * 2]}, 0.32)`)).join('')), '24px 30px'),
-  ]],
-  ['zigzag', 'zigzag', (t) => [
-    layer(svgTile(16, 16, `<path d='M0 11 L4 5 L8 11 L12 5 L16 11' fill='none' stroke='rgba(${t}, 0.24)' stroke-width='1.5'/>`), '16px 16px'),
-  ]],
   ['confetti', 'confetti', () => [
     layer(
       svgTile(
@@ -1346,7 +1307,46 @@ const GROUP_PATTERNS = [
       '24px 22px',
     ),
   ]],
-];
+
+  ['rainbow squiggles', 'rainbow-squiggle', () => [
+    layer(svgTile(24, 30, [5, 15, 25].map((y, i) => wave(y, `rgba(${RAINBOW_HUES[i * 2]}, 0.32)`)).join('')), '24px 30px'),
+  ]],
+  ['polka dots', 'dots', (t) => [layer(`radial-gradient(rgba(${t}, 0.3) 1.7px, transparent 1.9px)`, '12px 12px')]],
+  ['bubbles', 'bubbles', (t) => [
+    layer(`radial-gradient(rgba(${t}, 0.26) 3.4px, transparent 3.8px)`, '26px 26px'),
+    layer(`radial-gradient(rgba(${t}, 0.34) 1.4px, transparent 1.7px)`, '26px 26px', '13px 13px'),
+  ]],
+  ['rainbow dots', 'rainbow-dots', () =>
+    [0, 2, 4, 6].map((h, i) =>
+      layer(
+        `radial-gradient(rgba(${RAINBOW_HUES[h]}, 0.34) 1.8px, transparent 2px)`,
+        '22px 22px',
+        ['0 0', '11px 11px', '11px 0', '0 11px'][i],
+      ),
+    )],
+  ['diagonal stripes', 'stripes', (t) => [
+    layer(`repeating-linear-gradient(45deg, rgba(${t}, 0.12) 0 3px, transparent 3px 15px)`),
+  ]],
+  ['rainbow stripes', 'rainbow-stripes', () => [
+    layer(
+      `repeating-linear-gradient(45deg, ${RAINBOW_HUES.map(
+        (h, i) => `rgba(${h}, 0.1) ${i * 8}px ${(i + 1) * 8}px`,
+      ).join(', ')})`,
+    ),
+  ]],
+  ['grid', 'grid', (t) => [
+    layer(`linear-gradient(rgba(${t}, 0.14) 1px, transparent 1px)`, '16px 16px'),
+    layer(`linear-gradient(90deg, rgba(${t}, 0.14) 1px, transparent 1px)`, '16px 16px'),
+  ]],
+  ['checks', 'checks', (t) => [layer(`repeating-conic-gradient(rgba(${t}, 0.11) 0% 25%, transparent 0% 50%)`, '18px 18px')]],
+  ['crosshatch', 'crosshatch', (t) => [
+    layer(`repeating-linear-gradient(45deg, rgba(${t}, 0.12) 0 1px, transparent 1px 11px)`),
+    layer(`repeating-linear-gradient(-45deg, rgba(${t}, 0.12) 0 1px, transparent 1px 11px)`),
+  ]],
+  ['squiggles', 'squiggle', (t) => [layer(svgTile(24, 20, wave(9, `rgba(${t}, 0.28)`)), '24px 20px')]],
+  ['zigzag', 'zigzag', (t) => [
+    layer(svgTile(16, 16, `<path d='M0 11 L4 5 L8 11 L12 5 L16 11' fill='none' stroke='rgba(${t}, 0.24)' stroke-width='1.5'/>`), '16px 16px'),
+  ]],];
 
 function patternLayers(id, t) {
   const p = GROUP_PATTERNS.find((x) => x[1] === (id || ''));
@@ -1381,6 +1381,7 @@ function paintSkin(el, color, pattern) {
 
 const GROUP_COLORS = [
   ['no colour', ''],
+  ['rainbow', RAINBOW],
   ['grey', 'rgba(128, 128, 128, 0.1)'],
   ['slate', 'rgba(125, 139, 161, 0.1)'],
   ['red', 'rgba(248, 81, 73, 0.1)'],
@@ -1398,7 +1399,6 @@ const GROUP_COLORS = [
   ['magenta', 'rgba(214, 79, 232, 0.1)'],
   ['pink', 'rgba(219, 97, 162, 0.1)'],
   ['brown', 'rgba(166, 124, 82, 0.1)'],
-  ['rainbow', RAINBOW],
 ];
 
 function makeStylePicker(initial) {
