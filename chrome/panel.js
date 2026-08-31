@@ -1442,10 +1442,13 @@ function makeStylePicker(initial) {
   const paintPatterns = () => {
     const t = rgbOf(color) || GREY;
     for (const b of patRow.children) {
+      b.style.setProperty('--ring', `rgb(${t})`);
+      const sw = b.querySelector('.sw');
+      if (!sw) continue;
       const ls = patternLayers(b.dataset.pattern, t);
-      b.style.backgroundImage = ls.length ? ls.map((l) => l.img).join(', ') : 'none';
-      b.style.backgroundSize = ls.map((l) => l.size).join(', ');
-      b.style.backgroundPosition = ls.map((l) => l.pos).join(', ');
+      sw.style.backgroundImage = ls.map((l) => l.img).join(', ');
+      sw.style.backgroundSize = ls.map((l) => l.size).join(', ');
+      sw.style.backgroundPosition = ls.map((l) => l.pos).join(', ');
     }
   };
   const setColor = (value) => {
@@ -1481,7 +1484,12 @@ function makeStylePicker(initial) {
     b.className = 'pattern-cell';
     b.dataset.pattern = value;
     b.title = label;
-    if (!value) b.textContent = '∅';
+    const inner = document.createElement('i');
+    // The swatch draws at full scale in a double-size box then halves, so a
+    // cell shows several repeats instead of one stray motif.
+    inner.className = value ? 'sw' : 'nil';
+    if (!value) inner.textContent = '∅';
+    b.appendChild(inner);
     b.addEventListener('click', () => setPattern(value));
     patRow.appendChild(b);
   }
@@ -1489,11 +1497,14 @@ function makeStylePicker(initial) {
   setPattern(pattern);
 
   const row = document.createElement('div');
-  row.className = 'row';
-  row.append(emojiBtn, colorRow);
+  row.className = 'row sp-top';
+  const grids = document.createElement('div');
+  grids.className = 'sp-grids';
+  grids.append(colorRow, patRow);
+  row.append(emojiBtn, grids);
   const wrap = document.createElement('div');
   wrap.className = 'style-picker';
-  wrap.append(row, patRow, grid);
+  wrap.append(row, grid);
   return { getEmoji: () => emoji, getColor: () => color, getPattern: () => pattern, row: wrap };
 }
 

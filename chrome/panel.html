@@ -565,12 +565,15 @@
     .check { display: flex; align-items: center; gap: 7px; font-size: 11.5px; color: var(--muted); cursor: pointer; }
     .check input { flex: none; margin: 0; }
     .style-picker { display: flex; flex-direction: column; gap: 6px; }
+    .style-picker .sp-top { align-items: flex-start; justify-content: flex-start; padding-top: 0; }
+    .sp-grids { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
     .row-editor .emoji-btn {
       flex: none;
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      width: 36px;
+      width: 34px;
+      height: 34px;
       padding: 0;
       font-size: 15px;
       line-height: 1;
@@ -585,25 +588,34 @@
       border-radius: 6px;
       padding: 4px;
     }
-    .color-row { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; flex: 1; }
-    .row-editor .color-cell {
-      flex: none;
-      width: 20px;
-      height: 20px;
+    .color-row, .pattern-row {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, 26px);
+      justify-content: space-between;
+      gap: 5px;
+      flex: 1;
+    }
+    .row-editor .color-cell,
+    .row-editor .pattern-cell {
+      width: 26px;
+      height: 26px;
       padding: 0;
       border: 1px solid var(--line);
+      outline: none;
+      transition: box-shadow 0.12s ease, border-color 0.12s ease, background 0.12s ease;
+    }
+    .row-editor .color-cell:hover,
+    .row-editor .pattern-cell:hover { border-color: var(--muted); }
+    .row-editor .color-cell.sel,
+    .row-editor .pattern-cell.sel {
+      border-color: transparent;
+      box-shadow: 0 0 0 1.5px var(--bg), 0 0 0 3px var(--ring, var(--accent));
+    }
+    .row-editor .color-cell {
       border-radius: 50%;
       background: var(--cell, transparent);
-      outline: none;
-      transition: transform 0.1s ease, background 0.1s ease;
     }
-    .row-editor .color-cell:hover { transform: scale(1.18); background: var(--cell-strong, var(--hover)); }
-    .row-editor .color-cell.sel {
-      background: var(--cell-strong, var(--hover));
-      border-color: transparent;
-      outline: 2px solid var(--ring, var(--muted));
-      outline-offset: 1px;
-    }
+    .row-editor .color-cell:hover, .row-editor .color-cell.sel { background: var(--cell-strong, var(--hover)); }
     .row-editor .color-cell.rainbow {
       background: linear-gradient(
         135deg,
@@ -617,26 +629,30 @@
       );
     }
     .row-editor .color-cell.rainbow:hover, .row-editor .color-cell.rainbow.sel { filter: saturate(1.6); }
-    .pattern-row { display: flex; flex-wrap: wrap; gap: 4px; }
     .row-editor .pattern-cell {
-      flex: none;
-      width: 26px;
-      height: 22px;
-      padding: 0;
-      border: 1px solid var(--line);
-      border-radius: 6px;
+      position: relative;
+      overflow: hidden;
+      border-radius: 7px;
       background-color: var(--card);
-      background-repeat: repeat;
-      font-size: 11px;
-      color: var(--muted);
-      outline: none;
-      transition: transform 0.1s ease, border-color 0.1s ease;
     }
-    .row-editor .pattern-cell:hover { transform: scale(1.12); border-color: var(--accent); }
-    .row-editor .pattern-cell.sel {
-      border-color: transparent;
-      outline: 2px solid var(--accent);
-      outline-offset: 1px;
+    .row-editor .pattern-cell .sw {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 200%;
+      height: 200%;
+      transform: scale(0.5);
+      transform-origin: 0 0;
+    }
+    .row-editor .pattern-cell .nil {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 12px;
+      font-style: normal;
+      color: var(--muted);
     }
     .row-editor .emoji-cell {
       flex: none;
