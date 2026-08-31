@@ -1264,43 +1264,8 @@ const svgTile = (w, h, body) =>
   `url("data:image/svg+xml,${encodeURIComponent(
     `<svg xmlns='http://www.w3.org/2000/svg' width='${w}' height='${h}'>${body}</svg>`,
   )}")`;
+const wave = (y, c) => `<path d='M0 ${y} Q6 ${y - 6} 12 ${y} T24 ${y}' fill='none' stroke='${c}' stroke-width='1.5'/>`;
 const layer = (img, size, pos) => ({ img, size: size || 'auto', pos: pos || '0 0' });
-const n1 = (v) => Number(v).toFixed(1);
-
-// One motif per cell of a coarse grid, jittered inside it: even coverage with
-// no clumps, which a plain random scatter gives away as a repeating blob. Each
-// motif is drawn four times at wrapped offsets so one crossing an edge comes
-// back on the far side and the tile still repeats seamlessly.
-const scatter = (seed, cols, rows, w, h, draw) => {
-  let s = seed;
-  const rnd = () => ((s = (s * 1664525 + 1013904223) >>> 0) / 4294967296);
-  const cw = w / cols;
-  const ch = h / rows;
-  let out = '';
-  let i = 0;
-  for (let cx = 0; cx < cols; cx++) {
-    for (let cy = 0; cy < rows; cy++, i++) {
-      const x = (cx + 0.15 + rnd() * 0.7) * cw;
-      const y = (cy + 0.15 + rnd() * 0.7) * ch;
-      const k = rnd();
-      for (const [dx, dy] of [[0, 0], [-w, 0], [0, -h], [-w, -h]]) out += draw(x + dx, y + dy, k, i);
-    }
-  }
-  return out;
-};
-
-// Whole wavelengths only: the tile width must stay a multiple of lambda or the
-// left and right edges stop meeting.
-const wave = (y, c, w, { amp = 6, lambda = 24, dx = 0 } = {}) => {
-  const half = lambda / 2;
-  let d = `M${dx - lambda} ${y} Q${n1(dx - lambda + half / 2)} ${n1(y - amp)} ${dx - half} ${y}`;
-  for (let x = dx - half; x < w + lambda; x += half) d += ` T${n1(x + half)} ${y}`;
-  return `<path d='${d}' fill='none' stroke='${c}' stroke-width='1.5'/>`;
-};
-
-const CONFETTI_HUES = ['rgb(248, 81, 73)', 'rgb(63, 185, 80)', 'rgb(56, 139, 253)', 'rgb(210, 153, 34)', 'rgb(163, 113, 247)'];
-const SPARKLE = 'M0 -5 Q1 -1 5 0 Q1 1 0 5 Q-1 1 -5 0 Q-1 -1 0 -5Z';
-const HEART = 'M0 5 C-8 0 -7.2 -7 -3.6 -7 C-1.7 -7 -0.4 -5.6 0 -4.6 C0.4 -5.6 1.7 -7 3.6 -7 C7.2 -7 8 0 0 5Z';
 
 // A pattern builds one or more background layers over the section tint. `t` is
 // the section's rgb triple, so mono patterns take the category's own hue and
@@ -1312,10 +1277,12 @@ const GROUP_PATTERNS = [
       svgTile(
         34,
         34,
-        `<g stroke-width='2.2' stroke-linecap='round' opacity='0.42'>` +
-          scatter(7, 2, 2, 34, 34, (x, y, k, i) =>
-            `<path d='M0 0 l0 ${n1(-4 - k * 3)}' stroke='${CONFETTI_HUES[i % 5]}' transform='translate(${n1(x)} ${n1(y)}) rotate(${Math.round(k * 340)})'/>`,
-          ) +
+        `<g stroke-width='2.2' stroke-linecap='round' opacity='0.4'>` +
+          `<path d='M4 6 l3 -4' stroke='rgb(248, 81, 73)'/>` +
+          `<path d='M21 4 l2 4' stroke='rgb(63, 185, 80)'/>` +
+          `<path d='M12 15 l4 -2' stroke='rgb(56, 139, 253)'/>` +
+          `<path d='M25 19 l-2 4' stroke='rgb(210, 153, 34)'/>` +
+          `<path d='M6 24 l3 3' stroke='rgb(163, 113, 247)'/>` +
           `</g>`,
       ),
       '34px 34px',
@@ -1324,58 +1291,30 @@ const GROUP_PATTERNS = [
   ['sparkles', 'sparkles', (t) => [
     layer(
       svgTile(
-        30,
-        30,
-        `<g fill='rgba(${t}, 0.3)'>` +
-          scatter(3, 2, 2, 30, 30, (x, y, k) =>
-            `<path d='${SPARKLE}' transform='translate(${n1(x)} ${n1(y)}) rotate(${Math.round(k * 90)}) scale(${(0.55 + k * 0.75).toFixed(2)})'/>`,
-          ) +
+        22,
+        22,
+        `<g fill='rgba(${t}, 0.28)'>` +
+          `<path d='M6 1 Q7 5 11 6 Q7 7 6 11 Q5 7 1 6 Q5 5 6 1Z'/>` +
+          `<path d='M16 12 Q16.7 14.6 19 15 Q16.7 15.4 16 18 Q15.3 15.4 13 15 Q15.3 14.6 16 12Z'/>` +
           `</g>`,
       ),
-      '30px 30px',
+      '22px 22px',
     ),
   ]],
   ['hearts', 'hearts', (t) => [
     layer(
-      svgTile(
-        48,
-        44,
-        `<g fill='rgba(${t}, 0.17)'>` +
-          scatter(11, 2, 2, 48, 44, (x, y, k) =>
-            `<path d='${HEART}' transform='translate(${n1(x)} ${n1(y)}) rotate(${Math.round(k * 50 - 25)}) scale(${(0.8 + k * 0.35).toFixed(2)})'/>`,
-          ) +
-          `</g>`,
-      ),
-      '48px 44px',
+      svgTile(24, 22, `<path d='M10 15 C2 10 3 3 6.5 3 C8.4 3 9.6 4.4 10 5.4 C10.4 4.4 11.6 3 13.5 3 C17 3 18 10 10 15Z' fill='rgba(${t}, 0.17)'/>`),
+      '24px 22px',
     ),
   ]],
+
   ['rainbow squiggles', 'rainbow-squiggle', () => [
-    layer(
-      svgTile(
-        48,
-        30,
-        [5, 15, 25]
-          .map((y, i) => wave(y, `rgba(${RAINBOW_HUES[i * 2]}, 0.32)`, 48, { amp: [4.5, 3.4, 5][i], dx: i * 9 }))
-          .join(''),
-      ),
-      '48px 30px',
-    ),
+    layer(svgTile(24, 30, [5, 15, 25].map((y, i) => wave(y, `rgba(${RAINBOW_HUES[i * 2]}, 0.32)`)).join('')), '24px 30px'),
   ]],
-  ['polka dots', 'dots', (t) => [
-    layer(`radial-gradient(rgba(${t}, 0.3) 1.7px, transparent 1.9px)`, '17px 17px'),
-    layer(`radial-gradient(rgba(${t}, 0.3) 1.7px, transparent 1.9px)`, '17px 17px', '8.5px 8.5px'),
-  ]],
+  ['polka dots', 'dots', (t) => [layer(`radial-gradient(rgba(${t}, 0.3) 1.7px, transparent 1.9px)`, '12px 12px')]],
   ['bubbles', 'bubbles', (t) => [
-    layer(
-      svgTile(
-        36,
-        36,
-        `<g fill='rgba(${t}, 0.28)'>` +
-          scatter(5, 2, 2, 36, 36, (x, y, k) => `<circle cx='${n1(x)}' cy='${n1(y)}' r='${n1(1.3 + k * 3.2)}'/>`) +
-          `</g>`,
-      ),
-      '36px 36px',
-    ),
+    layer(`radial-gradient(rgba(${t}, 0.26) 3.4px, transparent 3.8px)`, '26px 26px'),
+    layer(`radial-gradient(rgba(${t}, 0.34) 1.4px, transparent 1.7px)`, '26px 26px', '13px 13px'),
   ]],
   ['rainbow dots', 'rainbow-dots', () =>
     [0, 2, 4, 6].map((h, i) =>
@@ -1404,16 +1343,10 @@ const GROUP_PATTERNS = [
     layer(`repeating-linear-gradient(45deg, rgba(${t}, 0.12) 0 1px, transparent 1px 11px)`),
     layer(`repeating-linear-gradient(-45deg, rgba(${t}, 0.12) 0 1px, transparent 1px 11px)`),
   ]],
-  ['squiggles', 'squiggle', (t) => [
-    layer(
-      svgTile(48, 40, wave(11, `rgba(${t}, 0.28)`, 48) + wave(31, `rgba(${t}, 0.28)`, 48, { amp: 4.5, dx: 12 })),
-      '48px 40px',
-    ),
-  ]],
+  ['squiggles', 'squiggle', (t) => [layer(svgTile(24, 20, wave(9, `rgba(${t}, 0.28)`)), '24px 20px')]],
   ['zigzag', 'zigzag', (t) => [
     layer(svgTile(16, 16, `<path d='M0 11 L4 5 L8 11 L12 5 L16 11' fill='none' stroke='rgba(${t}, 0.24)' stroke-width='1.5'/>`), '16px 16px'),
-  ]],
-];
+  ]],];
 
 function patternLayers(id, t) {
   const p = GROUP_PATTERNS.find((x) => x[1] === (id || ''));
