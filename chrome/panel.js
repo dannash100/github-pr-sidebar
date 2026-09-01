@@ -16,7 +16,7 @@ const detailCache = new Map(); // html_url -> { baseRef, headRef, conflicts, add
 const ciCache = new Map(); // html_url -> { ci, at, updated_at }
 const DETAIL_TTL = 300000;
 const CI_TTL = 60000;
-let prMeta = {}; // html_url -> { group, blockedBy, note, later }, user-set via the row editor
+let prMeta = {}; // html_url -> { group, blockedBy, note, qaDoc, later }, user-set via the row editor
 let categories = []; // [{ id, name, emoji, color, epic, collapsed }], render order
 let collapsedNodes = new Set(); // html_urls whose stacked children are folded away
 let filterText = '';
@@ -24,6 +24,16 @@ const blockerCache = new Map(); // owner/repo#n -> { repo, number, state, title,
 let editorOpen = null; // key whose editor is open; load/renderList bail so a poll can't wipe typing
 
 const newId = () => `c${Math.random().toString(36).slice(2, 9)}`;
+const cleanUrl = (v) => {
+  const s = v.trim();
+  if (!s) return '';
+  return /^https?:\/\//i.test(s) ? s : `https://${s.replace(/^[a-z]+:\/*/i, '')}`;
+};
+function qaChip(href) {
+  const el = chip('🧪 QA', 'tint-amber qa', `QA doc\n${href}`);
+  el.dataset.href = href;
+  return el;
+}
 const catById = (id) => categories.find((c) => c.id === id) ?? null;
 const saveCats = () => api.storage.local.set({ categories });
 const saveMeta = () => api.storage.local.set({ prMeta });
@@ -678,6 +688,7 @@ function buildMeta(pr) {
     metaEl.appendChild(b);
   }
   if (pr.note) metaEl.appendChild(chip('📝', 'note', pr.note));
+  if (pr.qaDoc) metaEl.appendChild(qaChip(pr.qaDoc));
   if (pr.draft) metaEl.appendChild(chip('draft', ''));
   if (pr.children?.length && collapsedNodes.has(pr.html_url)) {
     const s = document.createElement('span');
@@ -729,7 +740,7 @@ function editButton(url) {
   const edit = document.createElement('button');
   edit.className = 'edit-btn';
   edit.dataset.edit = url;
-  edit.title = 'Category · epic · blocked by · note';
+  edit.title = 'Category · epic · blocked by · note · QA doc';
   edit.textContent = '⋯';
   return edit;
 }
@@ -814,6 +825,7 @@ function renderSection(sec) {
   count.className = 'sec-count';
   count.textContent = sec.total;
   head.append(tw, name, count);
+  if (sec.qaDoc) head.appendChild(qaChip(sec.qaDoc));
   if (sec.collapsed) {
     const stats = document.createElement('span');
     stats.className = 'sec-stats';
@@ -830,7 +842,7 @@ function renderSection(sec) {
   const cfg = document.createElement('button');
   cfg.className = 'edit-btn';
   cfg.dataset.editcat = sec.id;
-  cfg.title = 'Rename · emoji · colour · delete';
+  cfg.title = 'Rename · emoji · colour · QA doc · delete';
   cfg.textContent = '⋯';
   li.appendChild(cfg);
 
@@ -941,7 +953,7 @@ const rerender = () => renderList(buildModel(lastPrs));
 const SNAPSHOT_FIELDS = [
   'number', 'repo', 'html_url', 'title', 'draft', 'updated_at', 'comments',
   'baseRef', 'headRef', 'conflicts', 'additions', 'deletions', 'ci', 'queue',
-  'review', 'approvals', 'blockedBy', 'tracked', 'author', 'avatar', 'collab', 'group', 'note', 'later',
+  'review', 'approvals', 'blockedBy', 'tracked', 'author', 'avatar', 'collab', 'group', 'note', 'qaDoc', 'later',
 ];
 let savedSnapshot = '';
 
@@ -1026,6 +1038,7 @@ function shellPr(item, login) {
     collab: Boolean(author) && author !== login,
     group: meta.group ?? null,
     note: meta.note ?? null,
+    qaDoc: meta.qaDoc ?? null,
     later: meta.later === true,
   };
 }
@@ -1615,6 +1628,10 @@ function openEditor(li, url) {
   noteIn.placeholder = 'note (shows on hover)';
   noteIn.value = meta.note ?? '';
 
+  const qaIn = document.createElement('input');
+  qaIn.placeholder = '🧪 QA doc link';
+  qaIn.value = meta.qaDoc ?? '';
+
   const parked = Boolean(meta.later);
   const shelve = document.createElement('button');
   shelve.className = 'wide';
@@ -1662,7 +1679,13 @@ function openEditor(li, url) {
       if (viewLater) cat.later = true;
       categories.push(cat);
     }
-    const m = { group: catId, blockedBy: blockedIn.value.trim(), note: noteIn.value.trim(), later: meta.later };
+    const m = {
+      group: catId,
+      blockedBy: blockedIn.value.trim(),
+      note: noteIn.value.trim(),
+      qaDoc: cleanUrl(qaIn.value),
+      later: meta.later,
+    };
     for (const k of Object.keys(m)) if (!m[k]) delete m[k];
     if (Object.keys(m).length) prMeta[url] = m;
     else delete prMeta[url];
@@ -1681,6 +1704,7 @@ function openEditor(li, url) {
     if (pr) {
       pr.group = catId || null;
       pr.note = m.note ?? null;
+      pr.qaDoc = m.qaDoc ?? null;
       if (!m.blockedBy) pr.blockedBy = null;
       else {
         const target = lastPrs.find((p) => p.html_url === m.blockedBy);
@@ -1698,7 +1722,7 @@ function openEditor(li, url) {
     else if (e.key === 'Enter' && (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT')) save.click();
   });
 
-  form.append(catSel, newCatIn, style.row, epicWrap, blockedIn, noteIn, shelve, row);
+  form.append(catSel, newCatIn, style.row, epicWrap, blockedIn, noteIn, qaIn, shelve, row);
   li.appendChild(form);
   catSel.focus();
 }
@@ -1720,6 +1744,10 @@ function openCatEditor(li, id) {
 
   const style = makeStylePicker(cat);
 
+  const qaIn = document.createElement('input');
+  qaIn.placeholder = '🧪 QA doc link';
+  qaIn.value = cat.qaDoc ?? '';
+
   const save = document.createElement('button');
   save.textContent = 'Save';
   save.className = 'primary';
@@ -1732,7 +1760,7 @@ function openCatEditor(li, id) {
   btnRow.className = 'row';
   btnRow.append(del, cancel, save);
 
-  const rows = [nameIn, style.row];
+  const rows = [nameIn, style.row, qaIn];
   if (cat.epic) {
     const clearEpic = document.createElement('button');
     clearEpic.textContent = '⭐ Clear epic';
@@ -1763,6 +1791,9 @@ function openCatEditor(li, id) {
     c.emoji = style.getEmoji();
     c.color = style.getColor();
     c.pattern = style.getPattern();
+    const qa = cleanUrl(qaIn.value);
+    if (qa) c.qaDoc = qa;
+    else delete c.qaDoc;
     await saveCats();
     closeEditor();
     rerender();
@@ -2096,6 +2127,12 @@ list.addEventListener('click', async (e) => {
     return;
   }
   if (e.target.closest('.row-editor')) return;
+  const ext = e.target.closest('[data-href]');
+  if (ext) {
+    e.preventDefault();
+    openUrl(ext.dataset.href);
+    return;
+  }
   const sec = e.target.closest('[data-sectoggle]');
   if (sec) {
     e.preventDefault();
@@ -2115,12 +2152,6 @@ list.addEventListener('click', async (e) => {
     expandedGroups.has(key) ? expandedGroups.delete(key) : expandedGroups.add(key);
     closeEditor();
     rerender();
-    return;
-  }
-  const ext = e.target.closest('[data-href]');
-  if (ext) {
-    e.preventDefault();
-    openUrl(ext.dataset.href);
     return;
   }
   const a = e.target.closest('a');
