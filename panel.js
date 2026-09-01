@@ -16,7 +16,7 @@ const detailCache = new Map(); // html_url -> { baseRef, headRef, conflicts, add
 const ciCache = new Map(); // html_url -> { ci, at, updated_at }
 const DETAIL_TTL = 300000;
 const CI_TTL = 60000;
-let prMeta = {}; // html_url -> { group, blockedBy, note, qaDoc, qaLabel, later }, user-set via the row editor
+let prMeta = {}; // html_url -> { group, blockedBy, note, qaDoc, later }, user-set via the row editor
 let categories = []; // [{ id, name, emoji, color, epic, collapsed }], render order
 let collapsedNodes = new Set(); // html_urls whose stacked children are folded away
 let filterText = '';
@@ -29,26 +29,17 @@ const cleanUrl = (v) => {
   if (!s) return '';
   return /^https?:\/\//i.test(s) ? s : `https://${s.replace(/^[a-z]+:\/*/i, '')}`;
 };
-function qaChip(href, label) {
-  const el = chip('🧪 QA', 'qa', label || href);
+function qaChip(href) {
+  const el = chip('🧪 QA', 'qa', href);
   el.dataset.href = href;
   return el;
 }
 
-// The label only means anything alongside a link, so the two fields move together.
-function qaFields(doc, label) {
-  const url = document.createElement('input');
-  url.placeholder = '🧪 QA doc link';
-  url.value = doc ?? '';
-  const name = document.createElement('input');
-  name.placeholder = 'what to call it (shows on hover)';
-  name.value = label ?? '';
-  const sync = () => {
-    name.style.display = url.value.trim() ? '' : 'none';
-  };
-  url.addEventListener('input', sync);
-  sync();
-  return { url, name, rows: [url, name], getDoc: () => cleanUrl(url.value), getLabel: () => name.value.trim() };
+function qaField(doc) {
+  const el = document.createElement('input');
+  el.placeholder = '🧪 QA doc link';
+  el.value = doc ?? '';
+  return el;
 }
 const catById = (id) => categories.find((c) => c.id === id) ?? null;
 const saveCats = () => api.storage.local.set({ categories });
@@ -704,7 +695,7 @@ function buildMeta(pr) {
     metaEl.appendChild(b);
   }
   if (pr.note) metaEl.appendChild(chip('📝', 'note', pr.note));
-  if (pr.qaDoc) metaEl.appendChild(qaChip(pr.qaDoc, pr.qaLabel));
+  if (pr.qaDoc) metaEl.appendChild(qaChip(pr.qaDoc));
   if (pr.draft) metaEl.appendChild(chip('draft', ''));
   if (pr.children?.length && collapsedNodes.has(pr.html_url)) {
     const s = document.createElement('span');
@@ -841,7 +832,7 @@ function renderSection(sec) {
   count.className = 'sec-count';
   count.textContent = sec.total;
   head.append(tw, name, count);
-  if (sec.qaDoc) head.appendChild(qaChip(sec.qaDoc, sec.qaLabel));
+  if (sec.qaDoc) head.appendChild(qaChip(sec.qaDoc));
   if (sec.collapsed) {
     const stats = document.createElement('span');
     stats.className = 'sec-stats';
@@ -969,7 +960,7 @@ const rerender = () => renderList(buildModel(lastPrs));
 const SNAPSHOT_FIELDS = [
   'number', 'repo', 'html_url', 'title', 'draft', 'updated_at', 'comments',
   'baseRef', 'headRef', 'conflicts', 'additions', 'deletions', 'ci', 'queue',
-  'review', 'approvals', 'blockedBy', 'tracked', 'author', 'avatar', 'collab', 'group', 'note', 'qaDoc', 'qaLabel', 'later',
+  'review', 'approvals', 'blockedBy', 'tracked', 'author', 'avatar', 'collab', 'group', 'note', 'qaDoc', 'later',
 ];
 let savedSnapshot = '';
 
@@ -1055,7 +1046,6 @@ function shellPr(item, login) {
     group: meta.group ?? null,
     note: meta.note ?? null,
     qaDoc: meta.qaDoc ?? null,
-    qaLabel: meta.qaLabel ?? null,
     later: meta.later === true,
   };
 }
@@ -1645,7 +1635,7 @@ function openEditor(li, url) {
   noteIn.placeholder = 'note (shows on hover)';
   noteIn.value = meta.note ?? '';
 
-  const qa = qaFields(meta.qaDoc, meta.qaLabel);
+  const qaIn = qaField(meta.qaDoc);
 
   const parked = Boolean(meta.later);
   const shelve = document.createElement('button');
@@ -1698,8 +1688,7 @@ function openEditor(li, url) {
       group: catId,
       blockedBy: blockedIn.value.trim(),
       note: noteIn.value.trim(),
-      qaDoc: qa.getDoc(),
-      qaLabel: qa.getDoc() ? qa.getLabel() : '',
+      qaDoc: cleanUrl(qaIn.value),
       later: meta.later,
     };
     for (const k of Object.keys(m)) if (!m[k]) delete m[k];
@@ -1721,7 +1710,6 @@ function openEditor(li, url) {
       pr.group = catId || null;
       pr.note = m.note ?? null;
       pr.qaDoc = m.qaDoc ?? null;
-      pr.qaLabel = m.qaLabel ?? null;
       if (!m.blockedBy) pr.blockedBy = null;
       else {
         const target = lastPrs.find((p) => p.html_url === m.blockedBy);
@@ -1739,7 +1727,7 @@ function openEditor(li, url) {
     else if (e.key === 'Enter' && (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT')) save.click();
   });
 
-  form.append(catSel, newCatIn, style.row, epicWrap, blockedIn, noteIn, ...qa.rows, shelve, row);
+  form.append(catSel, newCatIn, style.row, epicWrap, blockedIn, noteIn, qaIn, shelve, row);
   li.appendChild(form);
   catSel.focus();
 }
@@ -1761,7 +1749,7 @@ function openCatEditor(li, id) {
 
   const style = makeStylePicker(cat);
 
-  const qa = qaFields(cat.qaDoc, cat.qaLabel);
+  const qaIn = qaField(cat.qaDoc);
 
   const save = document.createElement('button');
   save.textContent = 'Save';
@@ -1775,7 +1763,7 @@ function openCatEditor(li, id) {
   btnRow.className = 'row';
   btnRow.append(del, cancel, save);
 
-  const rows = [nameIn, style.row, ...qa.rows];
+  const rows = [nameIn, style.row, qaIn];
   if (cat.epic) {
     const clearEpic = document.createElement('button');
     clearEpic.textContent = '⭐ Clear epic';
@@ -1806,11 +1794,9 @@ function openCatEditor(li, id) {
     c.emoji = style.getEmoji();
     c.color = style.getColor();
     c.pattern = style.getPattern();
-    const doc = qa.getDoc();
+    const doc = cleanUrl(qaIn.value);
     if (doc) c.qaDoc = doc;
     else delete c.qaDoc;
-    if (doc && qa.getLabel()) c.qaLabel = qa.getLabel();
-    else delete c.qaLabel;
     await saveCats();
     closeEditor();
     rerender();
