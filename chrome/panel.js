@@ -30,7 +30,7 @@ const cleanUrl = (v) => {
   return /^https?:\/\//i.test(s) ? s : `https://${s.replace(/^[a-z]+:\/*/i, '')}`;
 };
 function qaChip(href, label) {
-  const el = chip(`🧪 ${label || 'QA'}`, 'qa', `${label || 'QA doc'}\n${href}`);
+  const el = chip('🧪 QA', 'qa', label || href);
   el.dataset.href = href;
   return el;
 }
@@ -41,7 +41,7 @@ function qaFields(doc, label) {
   url.placeholder = '🧪 QA doc link';
   url.value = doc ?? '';
   const name = document.createElement('input');
-  name.placeholder = 'what to call it (optional)';
+  name.placeholder = 'what to call it (shows on hover)';
   name.value = label ?? '';
   const sync = () => {
     name.style.display = url.value.trim() ? '' : 'none';
