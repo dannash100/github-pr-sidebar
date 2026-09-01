@@ -30,7 +30,7 @@ const cleanUrl = (v) => {
   return /^https?:\/\//i.test(s) ? s : `https://${s.replace(/^[a-z]+:\/*/i, '')}`;
 };
 function qaChip(href, label) {
-  const el = chip(`🧪 ${label || 'QA'}`, 'tint-amber qa', `${label || 'QA doc'}\n${href}`);
+  const el = chip(`🧪 ${label || 'QA'}`, 'qa', `${label || 'QA doc'}\n${href}`);
   el.dataset.href = href;
   return el;
 }
