@@ -14,7 +14,7 @@ Your open GitHub pull requests, in the Firefox sidebar (and the Chrome side pane
 - **Search** — the box under the header narrows by title, repo, author or number. `/` focuses it, Escape clears it.
 - **Blocked by** — mark a PR as blocked by another, picked from a dropdown. It sinks below actionable PRs with a ⛔ badge that flips to ✓ when the blocker merges; click the badge to open the blocker.
 - **Notes** — attach a note to a PR, shown on hover over its 📝 badge.
-- **QA docs** — paste a link (a Claude artifact, a Google Doc, whatever you write them in) into a PR's ⋯ or a category's ⋯. It shows as a 🧪 QA chip on the row or in the category header, and opens in a tab. Put it on the category to cover a whole epic, or on a single PR for one ticket.
+- **QA docs** — paste a link (a Claude artifact, a Google Doc, whatever you write them in) into a PR's ⋯ or a category's ⋯, and name it if you want. It shows as a 🧪 chip on the row or in the category header, and opens in a tab. Put it on the category to cover a whole epic, or on a single PR for one ticket.
 - **Track someone else's PR** — ＋ › Track a PR by URL follows a PR the search doesn't return. It drops out once merged or closed.
 - **Tab-aware** — the PR you're viewing is highlighted, and whatever hides it (category, stack, hotfix fold) opens. Clicking a PR focuses its existing tab instead of opening a duplicate.
 - **Scoped** — optionally limit to an org (`org:your-org`) or specific repos (`repo:owner/name`).

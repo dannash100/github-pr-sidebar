@@ -361,7 +361,14 @@
     .hf-toggle:hover, .stack-toggle:hover { color: var(--fg); }
     .blocked, .unblocked { cursor: pointer; }
     .note { cursor: help; }
-    .qa { cursor: pointer; letter-spacing: 0.1px; }
+    .qa {
+      cursor: pointer;
+      letter-spacing: 0.1px;
+      text-transform: none;
+      max-width: 140px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
     .qa:hover { --chip: rgba(210, 153, 34, 0.3); }
 
     li.group > a { cursor: pointer; }

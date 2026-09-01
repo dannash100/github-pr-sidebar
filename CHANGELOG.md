@@ -4,7 +4,7 @@
 
 ### Added
 
-- **QA doc links.** A PR or a whole category can carry a link to its QA doc, set in ⋯ and shown as a 🧪 QA chip that opens in a tab.
+- **QA doc links.** A PR or a whole category can carry a link to its QA doc, set in ⋯ and shown as a 🧪 chip that opens in a tab. Name it and the chip carries the name.
 - **Category textures.** Alongside the colour, a category can carry a background pattern: polka dots, bubbles, diagonal stripes, grid, checks, crosshatch, squiggles, zigzag, confetti, sparkles, hearts, plus rainbow cuts of dots, stripes and squiggles. The swatches preview in the category's own hue.
 - Nine more colours (slate, coral, lime, mint, cyan, indigo, magenta, brown) and a rainbow tint that washes the whole section.
 
