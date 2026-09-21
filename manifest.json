@@ -1,7 +1,7 @@
 {
   "manifest_version": 2,
   "name": "PR Sidebar",
-  "version": "1.3",
+  "version": "1.4",
   "description": "Lists your open GitHub pull requests in the Firefox sidebar. Talks only to api.github.com with a read-only token.",
   "author": "Daniel Nash",
   "permissions": [

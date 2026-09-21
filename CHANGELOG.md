@@ -1,12 +1,17 @@
 # Changelog
 
-## Unreleased
+## 1.4 — 2026-09-22
 
 ### Added
 
 - **QA doc links.** A PR or a whole category can carry a link to its QA doc, set in ⋯ and shown as a 🧪 QA chip that opens in a tab, tinted to the category's colour.
 - **Category textures.** Alongside the colour, a category can carry a background pattern: polka dots, bubbles, diagonal stripes, grid, checks, crosshatch, squiggles, zigzag, confetti, sparkles, hearts, plus rainbow cuts of dots, stripes and squiggles. The swatches preview in the category's own hue.
 - Nine more colours (slate, coral, lime, mint, cyan, indigo, magenta, brown) and a rainbow tint that washes the whole section.
+- **Shelve a whole category.** Drag a category header onto the shelf and everything in it goes, stacks included; the header's ⋯ has Save all for later.
+
+### Fixed
+
+- Approvals came from the review decision, which branch protection sets, so a repo that doesn't require a review showed nothing however many approvals were in. The reviews themselves are read now, and the approved chip names who approved on hover.
 
 ## 1.3 — 2026-08-18
 
