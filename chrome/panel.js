@@ -891,9 +891,25 @@ function updateActiveHighlight() {
 
 // Re-render the list in place, FLIP-animating rows that moved and fading in new
 // ones, so a poll swaps content underneath without a flash.
+let renderedKey = '';
+
 function renderList(model) {
   if (editorOpen) return;
   autoExpandActive(model);
+  // Polls land every 10s and usually change nothing; a rebuild of a long list
+  // costs a visible hitch, so an identical render is skipped.
+  let key = '';
+  try {
+    key = JSON.stringify([
+      model, [...collapsedNodes], [...expandedGroups], viewLater, filterText, activeTabUrl,
+      Math.floor(Date.now() / 60000),
+    ]);
+  } catch {}
+  if (key && key === renderedKey && !justDropped) {
+    syncHeader(model);
+    return;
+  }
+  renderedKey = key;
   const before = new Map();
   for (const li of list.children) before.set(li.dataset.url, li.getBoundingClientRect().top);
 
@@ -965,6 +981,7 @@ const SNAPSHOT_FIELDS = [
 let savedSnapshot = '';
 
 function showSkeleton() {
+  renderedKey = '';
   list.textContent = '';
   for (let i = 0; i < 4; i++) {
     const li = document.createElement('li');
@@ -1213,7 +1230,10 @@ async function load(manual) {
     if (seq === loadSeq) {
       loading = false;
       $('refresh').classList.remove('spin');
-      if (!lastPrs.length && list.querySelector('li.sk')) list.textContent = '';
+      if (!lastPrs.length && list.querySelector('li.sk')) {
+        list.textContent = '';
+        renderedKey = '';
+      }
     }
   }
 }
@@ -1891,7 +1911,10 @@ function zoneLabel(zone) {
   return 'Release to cancel';
 }
 
+const sameZone = (a, b) => a.kind === b.kind && a.id === b.id && a.before === b.before && a.el === b.el;
+
 function applyZone(zone) {
+  if (dnd.action.textContent && sameZone(zone, dnd.zone)) return;
   clearZones();
   if (zone.kind === 'cat' || zone.kind === 'epic' || zone.kind === 'later') {
     zone.el.classList.add(zone.kind === 'epic' ? 'dnd-hot' : 'dnd-over');
@@ -1965,11 +1988,29 @@ function placeGhost() {
   dnd.ghost.style.transform = `translate(-50%, ${under ? '26%' : '-118%'}) rotate(${tilt}deg)`;
 }
 
+// The header is a drop target, so the band just under it scrolls instead;
+// otherwise a category above the fold can't be reached mid-drag.
+const EDGE = 56;
+function edgeScroll() {
+  const top = document.querySelector('header').getBoundingClientRect().bottom;
+  const { py } = dnd;
+  let v = 0;
+  if (py >= top && py < top + EDGE) v = -(1 - (py - top) / EDGE);
+  else if (py > window.innerHeight - EDGE) v = 1 - (window.innerHeight - py) / EDGE;
+  if (v) window.scrollBy(0, Math.round(v * 22) || Math.sign(v));
+  // A wheel scroll moves the page under a still cursor too.
+  if (window.scrollY !== dnd.sy) {
+    dnd.sy = window.scrollY;
+    applyZone(zoneAt(dnd.px, dnd.py));
+  }
+}
+
 function ghostTick() {
   if (!dnd?.active) return;
   dnd.gx += (dnd.px - dnd.gx) * 0.3;
   dnd.gy += (dnd.py - dnd.gy) * 0.3;
   placeGhost();
+  edgeScroll();
   dnd.raf = requestAnimationFrame(ghostTick);
 }
 
@@ -1995,6 +2036,7 @@ list.addEventListener('mousedown', (e) => {
     active: false,
     zone: { kind: 'none' },
     hoverId: null,
+    sy: window.scrollY,
   };
   document.addEventListener('mousemove', onDndMove);
   document.addEventListener('mouseup', onDndUp);
@@ -2372,6 +2414,7 @@ $('clear').addEventListener('click', async () => {
   cachedLogin = null;
   lastPrs = [];
   list.textContent = '';
+  renderedKey = '';
   statusEl.textContent = 'Token cleared.';
   setup.style.display = 'block';
 });
